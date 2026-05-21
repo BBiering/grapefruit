@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from grapefruit.storage import _connect
+from grapefruit.storage import _use_db
 
 
 @dataclass
@@ -27,8 +27,7 @@ def scan_candidates(p: CandidateParams, limit: int = 100) -> list[dict]:
     """
     today = date.today()
     cutoff = today - timedelta(days=400)
-    con = _connect()
-    try:
+    with _use_db() as con:
         df = con.execute(
             """
             SELECT symbol, ts, close, volume
@@ -38,8 +37,6 @@ def scan_candidates(p: CandidateParams, limit: int = 100) -> list[dict]:
             """,
             [cutoff],
         ).df()
-    finally:
-        con.close()
 
     if df.empty:
         return []
