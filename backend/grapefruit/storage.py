@@ -58,6 +58,18 @@ def init_db() -> None:
             )
             """
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS assets (
+                symbol VARCHAR PRIMARY KEY,
+                name VARCHAR,
+                exchange VARCHAR,
+                sector VARCHAR,
+                industry VARCHAR,
+                refreshed_at TIMESTAMP
+            )
+            """
+        )
         con.execute("CREATE INDEX IF NOT EXISTS bars_symbol_idx ON bars(symbol)")
         con.execute("CREATE INDEX IF NOT EXISTS hits_window_idx ON hits(window_days)")
 
@@ -138,6 +150,8 @@ def save_hits(rows: list[dict], window_days: int, threshold: float) -> None:
 def query_hits(
     window_weeks: int | None = None,
     min_multiplier: float | None = None,
+    max_days_since_peak: int | None = None,
+    min_peak_retention: float | None = None,
 ) -> list[dict]:
     q = "SELECT symbol, window_days, threshold, start_ts, end_ts, trough_price, peak_price, multiplier, scanned_at FROM hits WHERE 1=1"
     params: list = []
