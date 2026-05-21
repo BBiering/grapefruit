@@ -221,6 +221,7 @@ __marimo__/
 node_modules/
 frontend/dist/
 *.local
+*.tsbuildinfo
 
 # Local data cache
 /data/
