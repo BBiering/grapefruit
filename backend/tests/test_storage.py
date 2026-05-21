@@ -11,8 +11,12 @@ def isolated_db(tmp_path, monkeypatch):
     db_path = tmp_path / "test.duckdb"
     monkeypatch.setattr(config, "DUCKDB_PATH", db_path)
     monkeypatch.setattr(storage, "DUCKDB_PATH", db_path, raising=False)
+    monkeypatch.setattr(storage, "_conn", None)
     storage.init_db()
     yield
+    if storage._conn is not None:
+        storage._conn.close()
+        monkeypatch.setattr(storage, "_conn", None)
 
 
 def test_upsert_and_load_roundtrip():
