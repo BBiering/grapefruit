@@ -1,0 +1,65 @@
+import axios from "axios";
+import type { Article, Bar, Candidate, Hit, Job, Universe } from "./types";
+
+const http = axios.create({ baseURL: "" });
+
+export async function getUniverse(): Promise<Universe> {
+  const { data } = await http.get<Universe>("/api/universe");
+  return data;
+}
+
+export async function refreshUniverse() {
+  const { data } = await http.post("/api/universe/refresh");
+  return data as { count: number; refreshed_at: string };
+}
+
+export async function refreshBars(years = 5) {
+  const { data } = await http.post<{ job_id: string }>("/api/bars/refresh", { years });
+  return data;
+}
+
+export async function runScan(window_weeks: number, threshold: number) {
+  const { data } = await http.post<{ job_id: string }>("/api/scan/historical", {
+    window_weeks,
+    threshold,
+  });
+  return data;
+}
+
+export async function getJob(jobId: string): Promise<Job> {
+  const { data } = await http.get<Job>(`/api/jobs/${jobId}`);
+  return data;
+}
+
+export async function getHits(params: {
+  window_weeks?: number;
+  min_multiplier?: number;
+}): Promise<Hit[]> {
+  const { data } = await http.get<Hit[]>("/api/hits", { params });
+  return data;
+}
+
+export async function getBars(symbol: string, start?: string, end?: string): Promise<Bar[]> {
+  const { data } = await http.get<Bar[]>(`/api/tickers/${symbol}/bars`, {
+    params: { start, end },
+  });
+  return data;
+}
+
+export async function getNews(symbol: string, around: string, days = 14): Promise<Article[]> {
+  const { data } = await http.get<Article[]>(`/api/tickers/${symbol}/news`, {
+    params: { around, days },
+  });
+  return data;
+}
+
+export async function scanCandidates(params: {
+  lookback_days: number;
+  gain_pct: number;
+  vol_mult: number;
+  high_lookback: number;
+  limit?: number;
+}): Promise<Candidate[]> {
+  const { data } = await http.post<Candidate[]>("/api/candidates/scan", params);
+  return data;
+}
