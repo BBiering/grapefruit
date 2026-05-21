@@ -65,3 +65,31 @@ def test_overlapping_qualifying_windows_merge_to_one_cluster():
     hits = detect_hits("TEST", closes, _dates(100), window=30, threshold=10.0)
     assert len(hits) == 1
     assert hits[0].multiplier >= 10.0
+
+
+def test_gap_in_dates_breaks_window():
+    # 20 flat bars, then a 365-day gap, then a small in-segment rise that's
+    # too short to be a 30-bar window on its own. A naive sliding window would
+    # span the gap and report a fake 10x.
+    flat = np.full(20, 1.0)
+    rise = np.linspace(1.0, 12.0, 15)  # only 15 bars, < window=30
+    closes = np.concatenate([flat, rise])
+    first = [date(2020, 1, 1) + timedelta(days=i) for i in range(20)]
+    gap_start = first[-1] + timedelta(days=365)
+    second = [gap_start + timedelta(days=i) for i in range(15)]
+    dates = np.array(first + second)
+    hits = detect_hits("TEST", closes, dates, window=30, threshold=10.0)
+    assert hits == []
+
+
+def test_two_separate_rises_in_separate_runs_both_detected():
+    rise = np.linspace(1.0, 12.0, 30)
+    closes = np.concatenate([rise, rise])
+    first = [date(2020, 1, 1) + timedelta(days=i) for i in range(30)]
+    gap_start = first[-1] + timedelta(days=365)
+    second = [gap_start + timedelta(days=i) for i in range(30)]
+    dates = np.array(first + second)
+    hits = detect_hits("TEST", closes, dates, window=30, threshold=10.0)
+    assert len(hits) == 2
+    assert all(h.multiplier >= 10.0 for h in hits)
+    assert hits[0].end_ts < hits[1].start_ts

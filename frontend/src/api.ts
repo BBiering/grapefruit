@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Article, Bar, Candidate, Hit, Job, Universe } from "./types";
+import type { Article, AssetMeta, Bar, Candidate, Catalyst, Hit, Job, Universe } from "./types";
 
 const http = axios.create({ baseURL: "" });
 
@@ -34,8 +34,22 @@ export async function getJob(jobId: string): Promise<Job> {
 export async function getHits(params: {
   window_weeks?: number;
   min_multiplier?: number;
+  max_days_since_peak?: number;
+  min_peak_retention?: number;
 }): Promise<Hit[]> {
   const { data } = await http.get<Hit[]>("/api/hits", { params });
+  return data;
+}
+
+export async function getTickerMeta(symbol: string): Promise<AssetMeta> {
+  const { data } = await http.get<AssetMeta>(`/api/tickers/${symbol}/meta`);
+  return data;
+}
+
+export async function getCatalyst(symbol: string, around: string): Promise<Catalyst> {
+  const { data } = await http.get<Catalyst>(`/api/tickers/${symbol}/catalyst`, {
+    params: { around },
+  });
   return data;
 }
 

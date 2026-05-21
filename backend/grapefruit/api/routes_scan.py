@@ -1,14 +1,16 @@
 from datetime import date
 
-import numpy as np
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from grapefruit import bars as bars_mod
-from grapefruit import storage
+from grapefruit import metadata, storage
 from grapefruit.detector import detect_hits
 from grapefruit.jobs import JobState, new_job, run_async
 from grapefruit.universe import fetch_active_universe, load_universe
+
+
+ENRICH_TOP_N = 200
 
 router = APIRouter()
 
@@ -106,6 +108,14 @@ def scan_historical(body: ScanBody) -> dict:
             j.processed = i
             j.message = f"scanned {sym} ({i}/{len(symbols)})"
         storage.save_hits(all_hits, window_days, threshold)
+        # Lazily enrich metadata for the strongest hits so the UI table isn't empty.
+        top = sorted(all_hits, key=lambda h: h["multiplier"], reverse=True)[:ENRICH_TOP_N]
+        for idx, h in enumerate(top, start=1):
+            try:
+                metadata.get_or_fetch(h["symbol"])
+            except Exception:  # noqa: BLE001
+                pass
+            j.message = f"enriching {h['symbol']} ({idx}/{len(top)})"
         return {"hits": len(all_hits), "window_days": window_days, "threshold": threshold}
 
     run_async(job, task)
@@ -113,10 +123,26 @@ def scan_historical(body: ScanBody) -> dict:
 
 
 @router.get("/api/hits")
-def get_hits(window_weeks: int | None = None, min_multiplier: float | None = None) -> list[dict]:
-    rows = storage.query_hits(window_weeks=window_weeks, min_multiplier=min_multiplier)
+def get_hits(
+    window_weeks: int | None = None,
+    min_multiplier: float | None = None,
+    max_days_since_peak: int | None = None,
+    min_peak_retention: float | None = None,
+) -> list[dict]:
+    rows = storage.query_hits(
+        window_weeks=window_weeks,
+        min_multiplier=min_multiplier,
+        max_days_since_peak=max_days_since_peak,
+        min_peak_retention=min_peak_retention,
+    )
     return [
-        {**r, "start_ts": _iso(r["start_ts"]), "end_ts": _iso(r["end_ts"]), "scanned_at": _iso(r["scanned_at"])}
+        {
+            **r,
+            "start_ts": _iso(r["start_ts"]),
+            "end_ts": _iso(r["end_ts"]),
+            "scanned_at": _iso(r["scanned_at"]),
+            "last_ts": _iso(r.get("last_ts")),
+        }
         for r in rows
     ]
 

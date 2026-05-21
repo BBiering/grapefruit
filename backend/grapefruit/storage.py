@@ -58,6 +58,18 @@ def init_db() -> None:
             )
             """
         )
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS assets (
+                symbol VARCHAR PRIMARY KEY,
+                name VARCHAR,
+                exchange VARCHAR,
+                sector VARCHAR,
+                industry VARCHAR,
+                refreshed_at TIMESTAMP
+            )
+            """
+        )
         con.execute("CREATE INDEX IF NOT EXISTS bars_symbol_idx ON bars(symbol)")
         con.execute("CREATE INDEX IF NOT EXISTS hits_window_idx ON hits(window_days)")
 
@@ -138,18 +150,83 @@ def save_hits(rows: list[dict], window_days: int, threshold: float) -> None:
 def query_hits(
     window_weeks: int | None = None,
     min_multiplier: float | None = None,
+    max_days_since_peak: int | None = None,
+    min_peak_retention: float | None = None,
 ) -> list[dict]:
-    q = "SELECT symbol, window_days, threshold, start_ts, end_ts, trough_price, peak_price, multiplier, scanned_at FROM hits WHERE 1=1"
+    q = """
+        WITH latest AS (
+            SELECT b.symbol, b.close AS current_price, b.ts AS last_ts
+            FROM bars b
+            JOIN (
+                SELECT symbol, MAX(ts) AS mx FROM bars GROUP BY symbol
+            ) m ON m.symbol = b.symbol AND m.mx = b.ts
+        )
+        SELECT
+            h.symbol, h.window_days, h.threshold,
+            h.start_ts, h.end_ts,
+            h.trough_price, h.peak_price, h.multiplier, h.scanned_at,
+            a.name, a.exchange, a.sector, a.industry,
+            l.current_price, l.last_ts,
+            CASE WHEN l.last_ts IS NULL THEN NULL
+                 ELSE CAST(date_diff('day', h.end_ts, l.last_ts) AS INTEGER)
+            END AS days_since_peak,
+            CASE WHEN h.peak_price > 0 AND l.current_price IS NOT NULL
+                 THEN l.current_price / h.peak_price
+                 ELSE NULL
+            END AS peak_retention
+        FROM hits h
+        LEFT JOIN assets a ON a.symbol = h.symbol
+        LEFT JOIN latest l ON l.symbol = h.symbol
+        WHERE 1=1
+    """
     params: list = []
     if window_weeks is not None:
-        q += " AND window_days = ?"
+        q += " AND h.window_days = ?"
         params.append(window_weeks * 5)
     if min_multiplier is not None:
-        q += " AND multiplier >= ?"
+        q += " AND h.multiplier >= ?"
         params.append(min_multiplier)
-    q += " ORDER BY multiplier DESC"
+    if max_days_since_peak is not None:
+        q += " AND date_diff('day', h.end_ts, l.last_ts) <= ?"
+        params.append(max_days_since_peak)
+    if min_peak_retention is not None:
+        q += " AND (h.peak_price > 0 AND l.current_price / h.peak_price >= ?)"
+        params.append(min_peak_retention)
+    q += " ORDER BY h.multiplier DESC"
     with _use_db() as con:
         cur = con.execute(q, params)
         rows = cur.fetchall()
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def upsert_asset(row: dict) -> None:
+    df = pd.DataFrame([row])
+    with _use_db() as con:
+        con.register("incoming_asset", df)
+        con.execute(
+            """
+            INSERT INTO assets (symbol, name, exchange, sector, industry, refreshed_at)
+            SELECT symbol, name, exchange, sector, industry, refreshed_at FROM incoming_asset
+            ON CONFLICT (symbol) DO UPDATE SET
+                name = EXCLUDED.name,
+                exchange = EXCLUDED.exchange,
+                sector = EXCLUDED.sector,
+                industry = EXCLUDED.industry,
+                refreshed_at = EXCLUDED.refreshed_at
+            """
+        )
+        con.unregister("incoming_asset")
+
+
+def load_asset(symbol: str) -> dict | None:
+    with _use_db() as con:
+        cur = con.execute(
+            "SELECT symbol, name, exchange, sector, industry, refreshed_at FROM assets WHERE symbol = ?",
+            [symbol],
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        cols = [d[0] for d in cur.description]
+        return dict(zip(cols, row, strict=True))

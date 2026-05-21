@@ -1,8 +1,11 @@
 from collections import deque
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 
 import numpy as np
+
+
+MAX_GAP_DAYS = 10  # calendar days; larger gaps split the series into separate runs.
 
 
 @dataclass
@@ -21,17 +24,58 @@ def detect_hits(
     dates: np.ndarray,
     window: int,
     threshold: float = 10.0,
+    max_gap_days: int = MAX_GAP_DAYS,
 ) -> list[Hit]:
     """
     Find non-overlapping clusters of qualifying sliding-windows where
     max(close)/min(close) >= threshold and the max occurs after the min.
 
-    O(n) using monotonic deques for the rolling max and min.
+    The series is first split into contiguous runs at any consecutive-bar
+    calendar gap greater than ``max_gap_days``, so windows can't span gaps
+    that would inflate the multiplier across unrelated periods.
     """
-    n = len(closes)
-    if n < window or window <= 1:
+    if window <= 1 or len(closes) < window:
         return []
+    hits: list[Hit] = []
+    for run_lo, run_hi in _runs(dates, max_gap_days):
+        if run_hi - run_lo + 1 < window:
+            continue
+        hits.extend(
+            _detect_in_run(
+                symbol,
+                closes[run_lo : run_hi + 1],
+                dates[run_lo : run_hi + 1],
+                window,
+                threshold,
+            )
+        )
+    return hits
 
+
+def _runs(dates: np.ndarray, max_gap_days: int) -> list[tuple[int, int]]:
+    """Return [(lo, hi)] inclusive index ranges, split at gaps > max_gap_days."""
+    n = len(dates)
+    if n == 0:
+        return []
+    gap = timedelta(days=max_gap_days)
+    runs: list[tuple[int, int]] = []
+    lo = 0
+    for i in range(1, n):
+        if _to_date(dates[i]) - _to_date(dates[i - 1]) > gap:
+            runs.append((lo, i - 1))
+            lo = i
+    runs.append((lo, n - 1))
+    return runs
+
+
+def _detect_in_run(
+    symbol: str,
+    closes: np.ndarray,
+    dates: np.ndarray,
+    window: int,
+    threshold: float,
+) -> list[Hit]:
+    n = len(closes)
     max_dq: deque[int] = deque()  # decreasing, front = window max index
     min_dq: deque[int] = deque()  # increasing, front = window min index
 
@@ -64,7 +108,6 @@ def detect_hits(
     if not qualifying:
         return []
 
-    # Merge overlapping/contiguous qualifying windows into clusters.
     hits: list[Hit] = []
     cluster_lo, cluster_hi = qualifying[0]
     for ws, we in qualifying[1:]:

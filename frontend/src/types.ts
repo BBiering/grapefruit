@@ -8,6 +8,30 @@ export interface Hit {
   peak_price: number;
   multiplier: number;
   scanned_at: string | null;
+  name: string | null;
+  exchange: string | null;
+  sector: string | null;
+  industry: string | null;
+  current_price: number | null;
+  last_ts: string | null;
+  days_since_peak: number | null;
+  peak_retention: number | null;
+}
+
+export interface AssetMeta {
+  symbol: string;
+  name: string | null;
+  exchange: string | null;
+  sector: string | null;
+  industry: string | null;
+  refreshed_at: string | null;
+}
+
+export interface Catalyst {
+  summary: string;
+  fetched_at: string;
+  model: string;
+  error?: string;
 }
 
 export interface Bar {
