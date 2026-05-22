@@ -47,6 +47,7 @@ def explain_move(
             pass
 
     base = {
+        "headline": "",
         "summary": "",
         "spike": spike,
         "spike_explanation": "",
@@ -83,6 +84,9 @@ def explain_move(
         f"Window: {period}.{move}{spike_section}\n\n"
         "Reply with a JSON object only (no surrounding prose). Schema:\n"
         "{\n"
+        '  "headline": "1-3 word tag for the catalyst (e.g. \\"Earnings beat\\", '
+        '\\"FDA approval\\", \\"Trial readout\\", \\"M&A rumor\\", \\"Short squeeze\\"); '
+        'use \\"No clear catalyst\\" if the rise was gradual",\n'
         '  "summary": "1-2 sentences on the primary catalyst for the overall rise",\n'
         '  "spike_explanation": "1-2 sentences on what news/event/filing drove the '
         f"{spike['date'] if spike else 'sharpest'} single-session jump specifically; "
@@ -124,6 +128,7 @@ def explain_move(
         parsed = _parse_json_response(raw)
         result = {
             **base,
+            "headline": (parsed.get("headline") or "").strip(),
             "summary": (parsed.get("summary") or "").strip(),
             "spike_explanation": (parsed.get("spike_explanation") or "").strip(),
             "was_foreseeable": parsed.get("was_foreseeable")

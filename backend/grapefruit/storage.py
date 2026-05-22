@@ -73,6 +73,21 @@ def init_db() -> None:
         )
         # Older databases may predate market_cap_usd; add it idempotently.
         con.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS market_cap_usd DOUBLE")
+        con.execute(
+            """
+            CREATE TABLE IF NOT EXISTS catalysts (
+                symbol VARCHAR NOT NULL,
+                end_ts DATE NOT NULL,
+                headline VARCHAR,
+                summary VARCHAR,
+                spike_explanation VARCHAR,
+                was_foreseeable BOOLEAN,
+                foreseeable_evidence VARCHAR,
+                fetched_at TIMESTAMP,
+                PRIMARY KEY (symbol, end_ts)
+            )
+            """
+        )
         con.execute("CREATE INDEX IF NOT EXISTS bars_symbol_idx ON bars(symbol)")
         con.execute("CREATE INDEX IF NOT EXISTS hits_window_idx ON hits(window_days)")
 
@@ -165,11 +180,17 @@ def save_hits(rows: list[dict], window_days: int, threshold: float) -> None:
         con.unregister("incoming_hits")
 
 
+PRE_TROUGH_LOOKBACK_DAYS = 180
+
+
 def query_hits(
     window_weeks: int | None = None,
     min_multiplier: float | None = None,
     max_days_since_peak: int | None = None,
     min_peak_retention: float | None = None,
+    min_breakout_ratio: float | None = None,
+    industry: str | None = None,
+    pre_trough_lookback_days: int = PRE_TROUGH_LOOKBACK_DAYS,
 ) -> list[dict]:
     q = """
         WITH latest AS (
@@ -178,6 +199,15 @@ def query_hits(
             JOIN (
                 SELECT symbol, MAX(ts) AS mx FROM bars GROUP BY symbol
             ) m ON m.symbol = b.symbol AND m.mx = b.ts
+        ),
+        pre_trough AS (
+            SELECT h.symbol, h.start_ts, h.end_ts, MAX(b.close) AS pre_high
+            FROM hits h
+            LEFT JOIN bars b
+              ON b.symbol = h.symbol
+             AND b.ts < h.start_ts
+             AND b.ts >= h.start_ts - CAST(? AS INTEGER) * INTERVAL 1 DAY
+            GROUP BY h.symbol, h.start_ts, h.end_ts
         )
         SELECT
             h.symbol, h.window_days, h.threshold,
@@ -191,13 +221,21 @@ def query_hits(
             CASE WHEN h.peak_price > 0 AND l.current_price IS NOT NULL
                  THEN l.current_price / h.peak_price
                  ELSE NULL
-            END AS peak_retention
+            END AS peak_retention,
+            p.pre_high,
+            CASE WHEN p.pre_high IS NULL OR p.pre_high <= 0 THEN NULL
+                 ELSE h.peak_price / p.pre_high
+            END AS breakout_ratio,
+            c.headline, c.summary AS catalyst_summary, c.was_foreseeable
         FROM hits h
         LEFT JOIN assets a ON a.symbol = h.symbol
         LEFT JOIN latest l ON l.symbol = h.symbol
+        LEFT JOIN pre_trough p
+          ON p.symbol = h.symbol AND p.start_ts = h.start_ts AND p.end_ts = h.end_ts
+        LEFT JOIN catalysts c ON c.symbol = h.symbol AND c.end_ts = h.end_ts
         WHERE 1=1
     """
-    params: list = []
+    params: list = [pre_trough_lookback_days]
     if window_weeks is not None:
         q += " AND h.window_days = ?"
         params.append(window_weeks * 5)
@@ -210,6 +248,15 @@ def query_hits(
     if min_peak_retention is not None:
         q += " AND (h.peak_price > 0 AND l.current_price / h.peak_price >= ?)"
         params.append(min_peak_retention)
+    if min_breakout_ratio is not None:
+        # Keep rows where we know the breakout cleared the threshold. NULL
+        # pre_high means we have no pre-trough bars at all (newly listed) -
+        # those are not rebounds, so let them through.
+        q += " AND (p.pre_high IS NULL OR p.pre_high <= 0 OR h.peak_price / p.pre_high >= ?)"
+        params.append(min_breakout_ratio)
+    if industry is not None:
+        q += " AND a.industry = ?"
+        params.append(industry)
     q += " ORDER BY h.multiplier DESC"
     with _use_db() as con:
         cur = con.execute(q, params)
@@ -281,6 +328,76 @@ def symbols_with_last_close_below(price_usd: float) -> list[str]:
         return [r[0] for r in rows]
 
 
+_CATALYST_COLS = (
+    "symbol",
+    "end_ts",
+    "headline",
+    "summary",
+    "spike_explanation",
+    "was_foreseeable",
+    "foreseeable_evidence",
+    "fetched_at",
+)
+
+
+def upsert_catalyst(row: dict) -> None:
+    row = {col: row.get(col) for col in _CATALYST_COLS}
+    df = pd.DataFrame([row])
+    with _use_db() as con:
+        con.register("incoming_catalyst", df)
+        con.execute(
+            """
+            INSERT INTO catalysts
+                (symbol, end_ts, headline, summary, spike_explanation,
+                 was_foreseeable, foreseeable_evidence, fetched_at)
+            SELECT symbol, end_ts, headline, summary, spike_explanation,
+                   was_foreseeable, foreseeable_evidence, fetched_at
+            FROM incoming_catalyst
+            ON CONFLICT (symbol, end_ts) DO UPDATE SET
+                headline = EXCLUDED.headline,
+                summary = EXCLUDED.summary,
+                spike_explanation = EXCLUDED.spike_explanation,
+                was_foreseeable = EXCLUDED.was_foreseeable,
+                foreseeable_evidence = EXCLUDED.foreseeable_evidence,
+                fetched_at = EXCLUDED.fetched_at
+            """
+        )
+        con.unregister("incoming_catalyst")
+
+
+def hits_without_catalyst(limit: int | None = None) -> list[dict]:
+    q = """
+        SELECT h.symbol, h.start_ts, h.end_ts, h.trough_price, h.peak_price, h.multiplier
+        FROM hits h
+        LEFT JOIN catalysts c ON c.symbol = h.symbol AND c.end_ts = h.end_ts
+        WHERE c.symbol IS NULL
+        ORDER BY h.multiplier DESC
+    """
+    params: list = []
+    if limit:
+        q += " LIMIT ?"
+        params.append(limit)
+    with _use_db() as con:
+        cur = con.execute(q, params)
+        rows = cur.fetchall()
+        cols = [d[0] for d in cur.description]
+        return [dict(zip(cols, r, strict=True)) for r in rows]
+
+
+def list_hit_industries() -> list[str]:
+    """Distinct, non-null industries among symbols that appear in `hits`."""
+    with _use_db() as con:
+        rows = con.execute(
+            """
+            SELECT DISTINCT a.industry
+            FROM hits h JOIN assets a ON a.symbol = h.symbol
+            WHERE a.industry IS NOT NULL AND a.industry != ''
+            ORDER BY a.industry
+            """
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
 def counts() -> dict:
     with _use_db() as con:
         return {
@@ -293,4 +410,5 @@ def counts() -> dict:
             "assets_with_market_cap": con.execute(
                 "SELECT COUNT(*) FROM assets WHERE market_cap_usd IS NOT NULL"
             ).fetchone()[0],
+            "catalysts": con.execute("SELECT COUNT(*) FROM catalysts").fetchone()[0],
         }

@@ -17,6 +17,11 @@ export interface Hit {
   last_ts: string | null;
   days_since_peak: number | null;
   peak_retention: number | null;
+  pre_high: number | null;
+  breakout_ratio: number | null;
+  headline: string | null;
+  catalyst_summary: string | null;
+  was_foreseeable: boolean | null;
 }
 
 export interface AssetMeta {
@@ -39,6 +44,7 @@ export interface AppStatus {
   assets_with_name: number;
   assets_with_market_cap: number;
   hit_symbols_missing_metadata: number;
+  catalysts: number;
 }
 
 export interface Spike {

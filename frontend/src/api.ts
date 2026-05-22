@@ -59,8 +59,24 @@ export async function getHits(params: {
   min_multiplier?: number;
   max_days_since_peak?: number;
   min_peak_retention?: number;
+  min_breakout_ratio?: number;
+  industry?: string;
 }): Promise<Hit[]> {
   const { data } = await http.get<Hit[]>("/api/hits", { params });
+  return data;
+}
+
+export async function getIndustries(): Promise<string[]> {
+  const { data } = await http.get<string[]>("/api/industries");
+  return data;
+}
+
+export async function batchCatalysts(limit = 50) {
+  const { data } = await http.post<{ job_id?: string; pending: number; fetched?: number }>(
+    "/api/catalyst/batch",
+    null,
+    { params: { limit } }
+  );
   return data;
 }
 
