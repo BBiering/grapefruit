@@ -227,12 +227,16 @@ def get_hits(
     min_multiplier: float | None = None,
     max_days_since_peak: int | None = None,
     min_peak_retention: float | None = None,
+    min_breakout_ratio: float | None = None,
+    industry: str | None = None,
 ) -> list[dict]:
     rows = storage.query_hits(
         window_weeks=window_weeks,
         min_multiplier=min_multiplier,
         max_days_since_peak=max_days_since_peak,
         min_peak_retention=min_peak_retention,
+        min_breakout_ratio=min_breakout_ratio,
+        industry=industry,
     )
     _trigger_auto_enrich()
     return [
@@ -267,7 +271,76 @@ def get_status() -> dict:
         "assets_with_name": c["assets_with_name"],
         "assets_with_market_cap": c["assets_with_market_cap"],
         "hit_symbols_missing_metadata": pending_enrich,
+        "catalysts": c["catalysts"],
     }
+
+
+@router.get("/api/industries")
+def get_industries() -> list[str]:
+    return storage.list_hit_industries()
+
+
+@router.post("/api/catalyst/batch")
+def batch_catalysts(limit: int = 50) -> dict:
+    """Fetch catalysts (Perplexity) for hits that don't have one yet, top-N by multiplier."""
+    if not settings.perplexity_api_key:
+        raise HTTPException(400, "PERPLEXITY_API_KEY not set. Add it to .env and restart.")
+    pending = storage.hits_without_catalyst(limit=limit)
+    if not pending:
+        return {"pending": 0, "fetched": 0}
+    job = new_job("catalyst_batch")
+    job.total = len(pending)
+
+    from datetime import datetime, timezone
+
+    from grapefruit.catalyst import explain_move
+    from grapefruit.detector import find_spike
+
+    def task(j: JobState):
+        fetched = 0
+        for idx, h in enumerate(pending, start=1):
+            sym = h["symbol"]
+            start_ts = h["start_ts"]
+            end_ts = h["end_ts"]
+            meta = storage.load_asset(sym) or {}
+            spike = None
+            df = storage.load_symbol(sym, start=start_ts, end=end_ts)
+            if not df.empty:
+                spike = find_spike(
+                    df["close"].to_numpy(dtype=float),
+                    df["ts"].to_numpy(),
+                    start_ts,
+                    end_ts,
+                )
+            result = explain_move(
+                sym,
+                meta.get("name"),
+                end_ts,
+                trough_price=h.get("trough_price"),
+                peak_price=h.get("peak_price"),
+                start=start_ts,
+                spike=spike,
+            )
+            if not result.get("error"):
+                storage.upsert_catalyst(
+                    {
+                        "symbol": sym,
+                        "end_ts": end_ts,
+                        "headline": result.get("headline") or None,
+                        "summary": result.get("summary") or None,
+                        "spike_explanation": result.get("spike_explanation") or None,
+                        "was_foreseeable": result.get("was_foreseeable"),
+                        "foreseeable_evidence": result.get("foreseeable_evidence") or None,
+                        "fetched_at": datetime.now(timezone.utc),
+                    }
+                )
+                fetched += 1
+            j.processed = idx
+            j.message = f"{sym} {end_ts} ({idx}/{len(pending)})"
+        return {"pending": len(pending), "fetched": fetched}
+
+    run_async(job, task)
+    return {"job_id": job.job_id, "pending": len(pending)}
 
 
 def _iso(v) -> str | None:

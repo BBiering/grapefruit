@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException
 
@@ -71,7 +71,7 @@ def get_catalyst(
                 start,
                 around,
             )
-    return explain_move(
+    result = explain_move(
         sym,
         meta.get("name"),
         around,
@@ -81,6 +81,20 @@ def get_catalyst(
         spike=spike,
         refresh=refresh,
     )
+    if not result.get("error"):
+        storage.upsert_catalyst(
+            {
+                "symbol": sym,
+                "end_ts": around,
+                "headline": result.get("headline") or None,
+                "summary": result.get("summary") or None,
+                "spike_explanation": result.get("spike_explanation") or None,
+                "was_foreseeable": result.get("was_foreseeable"),
+                "foreseeable_evidence": result.get("foreseeable_evidence") or None,
+                "fetched_at": datetime.now(timezone.utc),
+            }
+        )
+    return result
 
 
 @router.get("/api/tickers/{symbol}/spike")
