@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     apca_api_key_id: str = ""
     apca_api_secret_key: str = ""
     perplexity_api_key: str = ""
+    finnhub_api_key: str = ""
 
 
 settings = Settings()

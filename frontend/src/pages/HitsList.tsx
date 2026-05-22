@@ -1,7 +1,14 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { getHits } from "../api";
+import { enrichAssets, getHits, getStatus } from "../api";
+
+function formatMarketCap(usd: number | null) {
+  if (usd == null) return <span className="muted">—</span>;
+  if (usd >= 1e9) return `$${(usd / 1e9).toFixed(2)}B`;
+  if (usd >= 1e6) return `$${(usd / 1e6).toFixed(0)}M`;
+  return `$${usd.toFixed(0)}`;
+}
 
 export default function HitsList() {
   const [minMult, setMinMult] = useState(10);
@@ -9,6 +16,7 @@ export default function HitsList() {
   const [maxDaysSincePeak, setMaxDaysSincePeak] = useState<number | "">("");
   const [minPeakRetention, setMinPeakRetention] = useState<number | "">("");
   const nav = useNavigate();
+  const qc = useQueryClient();
 
   const query = useQuery({
     queryKey: ["hits", windowWeeks, minMult, maxDaysSincePeak, minPeakRetention],
@@ -23,10 +31,60 @@ export default function HitsList() {
       }),
   });
 
+  const status = useQuery({
+    queryKey: ["status"],
+    queryFn: getStatus,
+    refetchInterval: 5000,
+  });
+
+  const enrichMut = useMutation({
+    mutationFn: enrichAssets,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["status"] }),
+  });
+
   const rows = useMemo(() => query.data ?? [], [query.data]);
+  const missingNames = useMemo(
+    () => rows.filter((r) => !r.name).length,
+    [rows]
+  );
+
+  const s = status.data;
+  const showEnrichBanner = missingNames > 0 || (s && s.hit_symbols_missing_metadata > 0);
 
   return (
     <div>
+      {showEnrichBanner && (
+        <div
+          className="card"
+          style={{ background: s?.keys.finnhub ? "#1f2a3a" : "#3a1f1f" }}
+        >
+          <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
+            <span>
+              {s?.keys.finnhub ? (
+                <>
+                  <strong>
+                    {s?.hit_symbols_missing_metadata ?? missingNames} hit symbols
+                  </strong>{" "}
+                  are missing company name / industry. Click to backfill from
+                  Finnhub (runs in background).
+                </>
+              ) : (
+                <>
+                  <strong>FINNHUB_API_KEY is not set.</strong> Add it to{" "}
+                  <code>.env</code> and restart the backend to populate name /
+                  industry / market cap.
+                </>
+              )}
+            </span>
+            <button
+              onClick={() => enrichMut.mutate()}
+              disabled={!s?.keys.finnhub || enrichMut.isPending}
+            >
+              {enrichMut.isPending ? "Starting…" : "Enrich now"}
+            </button>
+          </div>
+        </div>
+      )}
       <div className="card row">
         <label>
           Min multiplier:{" "}
@@ -82,8 +140,8 @@ export default function HitsList() {
           <tr>
             <th>Symbol</th>
             <th>Name</th>
-            <th>Sector</th>
             <th>Industry</th>
+            <th>Mkt cap</th>
             <th>Window (days)</th>
             <th>Trough</th>
             <th>Peak</th>
@@ -100,8 +158,8 @@ export default function HitsList() {
             <tr key={i} onClick={() => nav(`/ticker/${h.symbol}?peak=${h.end_ts}&trough=${h.start_ts}`)}>
               <td><strong>{h.symbol}</strong></td>
               <td>{h.name ?? <span className="muted">—</span>}</td>
-              <td>{h.sector ?? <span className="muted">—</span>}</td>
               <td>{h.industry ?? <span className="muted">—</span>}</td>
+              <td>{formatMarketCap(h.market_cap_usd)}</td>
               <td>{h.window_days}</td>
               <td>{h.start_ts}</td>
               <td>{h.end_ts}</td>

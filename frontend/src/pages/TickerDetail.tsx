@@ -1,9 +1,53 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getBars, getCatalyst, getNews, getTickerMeta } from "../api";
 import PriceChart from "../components/PriceChart";
 import HeadlineList from "../components/HeadlineList";
+import type { Catalyst } from "../types";
+
+function CatalystBody({ data }: { data: Catalyst }) {
+  const hasJsonContent =
+    data.summary || data.spike_explanation || data.was_foreseeable !== null;
+  if (!hasJsonContent && data.raw) {
+    return <p style={{ margin: 0, whiteSpace: "pre-wrap" }}>{data.raw}</p>;
+  }
+  return (
+    <div style={{ display: "grid", gap: "0.75rem" }}>
+      {data.summary && (
+        <div>
+          <div className="muted" style={{ fontSize: "0.85em" }}>Overall catalyst</div>
+          <div>{data.summary}</div>
+        </div>
+      )}
+      {data.spike && (
+        <div>
+          <div className="muted" style={{ fontSize: "0.85em" }}>
+            Sharpest single-session move
+          </div>
+          <div>
+            <strong>{data.spike.date}</strong>: $
+            {data.spike.prior_close.toFixed(2)} → $
+            {data.spike.close.toFixed(2)} (
+            {data.spike.single_day_multiplier.toFixed(2)}x in one session)
+          </div>
+          {data.spike_explanation && (
+            <div style={{ marginTop: "0.25rem" }}>{data.spike_explanation}</div>
+          )}
+        </div>
+      )}
+      {data.was_foreseeable !== null && (
+        <div>
+          <div className="muted" style={{ fontSize: "0.85em" }}>Was it foreseeable?</div>
+          <div>
+            <strong>{data.was_foreseeable ? "Yes" : "No"}</strong>
+            {data.foreseeable_evidence ? ` — ${data.foreseeable_evidence}` : ""}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 function shiftDate(iso: string, days: number): string {
   const d = new Date(iso + "T00:00:00Z");
@@ -17,6 +61,7 @@ export default function TickerDetail() {
   const peak = params.get("peak") ?? undefined;
   const trough = params.get("trough") ?? undefined;
   const [fullHistory, setFullHistory] = useState(false);
+  const qc = useQueryClient();
 
   const [chartStart, chartEnd] = useMemo(() => {
     if (fullHistory || !trough || !peak) return [undefined, undefined] as const;
@@ -36,8 +81,8 @@ export default function TickerDetail() {
   });
 
   const catalyst = useQuery({
-    queryKey: ["catalyst", symbol, peak],
-    queryFn: () => getCatalyst(symbol!, peak!),
+    queryKey: ["catalyst", symbol, peak, trough],
+    queryFn: () => getCatalyst(symbol!, peak!, { start: trough }),
     enabled: !!symbol && !!peak,
   });
 
@@ -89,19 +134,39 @@ export default function TickerDetail() {
       </div>
 
       <div className="card">
-        <h3>Catalyst (AI, web-grounded)</h3>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h3 style={{ margin: 0 }}>Why this stock moved</h3>
+          <button
+            onClick={() =>
+              qc.invalidateQueries({ queryKey: ["catalyst", symbol, peak, trough] })
+            }
+            disabled={!peak || catalyst.isFetching}
+          >
+            {catalyst.isFetching ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        <div className="muted" style={{ marginTop: "0.25rem", marginBottom: "0.75rem" }}>
+          AI explanation from Perplexity (web-grounded, cached on disk).
+        </div>
         {!peak ? (
-          <div className="muted">no peak date in URL</div>
+          <div className="muted">Open a hit from the Hits page to see its catalyst.</div>
         ) : catalyst.isLoading ? (
-          <div className="muted">asking Perplexity…</div>
+          <div className="muted">Asking Perplexity…</div>
         ) : catalyst.data?.error === "no_key" ? (
-          <div className="muted">
-            Set <code>PERPLEXITY_API_KEY</code> in your <code>.env</code> to enable AI catalyst explanations.
+          <div>
+            <strong>PERPLEXITY_API_KEY is not set.</strong> Add it to{" "}
+            <code>.env</code> and restart the backend. Get a key at{" "}
+            <code>https://www.perplexity.ai/settings/api</code>.
           </div>
         ) : catalyst.data?.error ? (
-          <div className="muted">catalyst lookup failed: {catalyst.data.error}</div>
+          <div>
+            Perplexity lookup failed: <code>{catalyst.data.error}</code>. Click
+            Refresh to retry, or check the backend logs for the full error.
+          </div>
+        ) : catalyst.data ? (
+          <CatalystBody data={catalyst.data} />
         ) : (
-          <p>{catalyst.data?.summary}</p>
+          <div className="muted">Perplexity returned no answer.</div>
         )}
       </div>
 

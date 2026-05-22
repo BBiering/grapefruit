@@ -144,10 +144,40 @@ def _cluster_to_hit(
     )
 
 
+def find_spike(closes: np.ndarray, dates: np.ndarray, start: date, end: date) -> dict | None:
+    """Return the single largest consecutive-bar close ratio inside [start, end].
+
+    Returns None if the window has < 2 bars or the prior close is non-positive.
+    """
+    if len(closes) < 2 or len(dates) != len(closes):
+        return None
+    date_objs = np.array([_to_date(d) for d in dates])
+    mask = (date_objs >= start) & (date_objs <= end)
+    idx = np.flatnonzero(mask)
+    if len(idx) < 2:
+        return None
+    lo, hi = int(idx[0]), int(idx[-1])
+    seg_closes = closes[lo : hi + 1]
+    seg_dates = date_objs[lo : hi + 1]
+    prior = seg_closes[:-1]
+    curr = seg_closes[1:]
+    safe = prior > 0
+    if not safe.any():
+        return None
+    ratios = np.where(safe, curr / np.where(safe, prior, 1.0), 0.0)
+    best = int(np.argmax(ratios))
+    return {
+        "date": seg_dates[best + 1].isoformat(),
+        "prior_date": seg_dates[best].isoformat(),
+        "prior_close": float(prior[best]),
+        "close": float(curr[best]),
+        "single_day_multiplier": float(ratios[best]),
+    }
+
+
 def _to_date(value) -> date:
     if isinstance(value, date):
         return value
     if isinstance(value, np.datetime64):
         return value.astype("datetime64[D]").astype(date)
-    # pandas Timestamp
     return value.date() if hasattr(value, "date") else value

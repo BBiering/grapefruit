@@ -16,7 +16,6 @@ dependencies = [
     "numpy>=2.0",
     "pyarrow>=18.0",
     "httpx>=0.27",
-    "yfinance>=0.2.40",
 ]
 
 [project.optional-dependencies]

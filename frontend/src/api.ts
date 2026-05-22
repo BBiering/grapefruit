@@ -1,5 +1,5 @@
 import axios from "axios";
-import type { Article, AssetMeta, Bar, Candidate, Catalyst, Hit, Job, Universe } from "./types";
+import type { AppStatus, Article, AssetMeta, Bar, Candidate, Catalyst, Hit, Job, Universe } from "./types";
 
 const http = axios.create({ baseURL: "" });
 
@@ -18,11 +18,34 @@ export async function refreshBars(years = 5) {
   return data;
 }
 
-export async function runScan(window_weeks: number, threshold: number) {
-  const { data } = await http.post<{ job_id: string }>("/api/scan/historical", {
-    window_weeks,
-    threshold,
-  });
+export async function runScan(params: {
+  window_weeks: number;
+  threshold: number;
+  max_price_usd?: number;
+  max_market_cap_usd?: number;
+}) {
+  const { data } = await http.post<{ job_id: string }>("/api/scan/historical", params);
+  return data;
+}
+
+export async function getStatus(): Promise<AppStatus> {
+  const { data } = await http.get<AppStatus>("/api/status");
+  return data;
+}
+
+export async function enrichAssets() {
+  const { data } = await http.post<{ job_id?: string; pending: number }>(
+    "/api/assets/enrich"
+  );
+  return data;
+}
+
+export async function refreshMarketCaps(limit?: number) {
+  const { data } = await http.post<{ job_id: string; symbols: number }>(
+    "/api/assets/refresh_market_caps",
+    null,
+    { params: limit ? { limit } : {} }
+  );
   return data;
 }
 
@@ -46,9 +69,13 @@ export async function getTickerMeta(symbol: string): Promise<AssetMeta> {
   return data;
 }
 
-export async function getCatalyst(symbol: string, around: string): Promise<Catalyst> {
+export async function getCatalyst(
+  symbol: string,
+  around: string,
+  opts: { start?: string; trough_price?: number; peak_price?: number; refresh?: boolean } = {}
+): Promise<Catalyst> {
   const { data } = await http.get<Catalyst>(`/api/tickers/${symbol}/catalyst`, {
-    params: { around },
+    params: { around, ...opts },
   });
   return data;
 }

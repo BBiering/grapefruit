@@ -2,8 +2,10 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   getJob,
+  getStatus,
   getUniverse,
   refreshBars,
+  refreshMarketCaps,
   refreshUniverse,
   runScan,
 } from "../api";
@@ -14,21 +16,41 @@ export default function ScanConfig() {
   const qc = useQueryClient();
   const [windowWeeks, setWindowWeeks] = useState(26);
   const [threshold, setThreshold] = useState(10);
+  const [maxPrice, setMaxPrice] = useState<number | "">(50);
+  const [maxCapUsd, setMaxCapUsd] = useState<number | "">(2_000_000_000);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [job, setJob] = useState<Job | null>(null);
 
   const universe = useQuery({ queryKey: ["universe"], queryFn: getUniverse });
+  const status = useQuery({
+    queryKey: ["status"],
+    queryFn: getStatus,
+    refetchInterval: job?.status === "running" ? 2000 : 10000,
+  });
 
   const refreshUniverseMut = useMutation({
     mutationFn: refreshUniverse,
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["universe"] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["universe"] });
+      qc.invalidateQueries({ queryKey: ["status"] });
+    },
   });
   const refreshBarsMut = useMutation({
     mutationFn: () => refreshBars(5),
     onSuccess: (d) => setActiveJobId(d.job_id),
   });
   const scanMut = useMutation({
-    mutationFn: () => runScan(windowWeeks, threshold),
+    mutationFn: () =>
+      runScan({
+        window_weeks: windowWeeks,
+        threshold,
+        max_price_usd: typeof maxPrice === "number" ? maxPrice : undefined,
+        max_market_cap_usd: typeof maxCapUsd === "number" ? maxCapUsd : undefined,
+      }),
+    onSuccess: (d) => setActiveJobId(d.job_id),
+  });
+  const refreshCapsMut = useMutation({
+    mutationFn: () => refreshMarketCaps(),
     onSuccess: (d) => setActiveJobId(d.job_id),
   });
 
@@ -41,16 +63,43 @@ export default function ScanConfig() {
       setJob(j);
       if (j.status === "running" || j.status === "pending") {
         setTimeout(tick, 1000);
+      } else {
+        qc.invalidateQueries({ queryKey: ["status"] });
       }
     };
     tick();
     return () => {
       cancelled = true;
     };
-  }, [activeJobId]);
+  }, [activeJobId, qc]);
+
+  const s = status.data;
+  const missingKey = s && (!s.keys.finnhub || !s.keys.perplexity);
 
   return (
     <div>
+      {s && (
+        <div className="card" style={{ background: missingKey ? "#3a1f1f" : undefined }}>
+          <h3>Status</h3>
+          <div className="row" style={{ gap: "1rem", flexWrap: "wrap" }}>
+            <span>
+              Keys: alpaca {s.keys.alpaca ? "✓" : "✗"} · finnhub{" "}
+              {s.keys.finnhub ? "✓" : "✗"} · perplexity {s.keys.perplexity ? "✓" : "✗"}
+            </span>
+            <span className="muted">
+              {s.universe_symbols} universe · {s.bar_symbols} with bars · {s.hits} hits ·{" "}
+              {s.assets_with_name}/{s.assets} assets named ·{" "}
+              {s.assets_with_market_cap} with market cap
+            </span>
+          </div>
+          {missingKey && (
+            <div className="muted" style={{ marginTop: "0.5rem" }}>
+              Missing API key(s) in <code>.env</code>. Add them and restart the backend.
+            </div>
+          )}
+        </div>
+      )}
+
       <div className="card">
         <h2>Universe</h2>
         <div className="row">
@@ -85,6 +134,23 @@ export default function ScanConfig() {
       </div>
 
       <div className="card">
+        <h2>Market caps (Finnhub)</h2>
+        <div className="row">
+          <button
+            onClick={() => refreshCapsMut.mutate()}
+            disabled={refreshCapsMut.isPending || !s?.keys.finnhub}
+          >
+            Backfill market caps
+          </button>
+          <span className="muted">
+            Pulls name, industry, and market cap for every universe symbol.
+            Finnhub free tier is 60 req/min, so ~3.5h for 12k symbols. Runs in
+            background. Required before <code>max_market_cap_usd</code> filtering works.
+          </span>
+        </div>
+      </div>
+
+      <div className="card">
         <h2>Run historical scan</h2>
         <div className="row">
           <label>
@@ -107,6 +173,30 @@ export default function ScanConfig() {
               onChange={(e) => setThreshold(Number(e.target.value))}
             />
           </label>
+          <label>
+            Max last close ($, blank = any):{" "}
+            <input
+              type="number"
+              min={1}
+              step={1}
+              value={maxPrice}
+              onChange={(e) =>
+                setMaxPrice(e.target.value === "" ? "" : Number(e.target.value))
+              }
+            />
+          </label>
+          <label>
+            Max market cap ($, blank = any):{" "}
+            <input
+              type="number"
+              min={1}
+              step={100_000_000}
+              value={maxCapUsd}
+              onChange={(e) =>
+                setMaxCapUsd(e.target.value === "" ? "" : Number(e.target.value))
+              }
+            />
+          </label>
           <button
             onClick={() => scanMut.mutate()}
             disabled={scanMut.isPending}
@@ -116,7 +206,9 @@ export default function ScanConfig() {
         </div>
         <div className="muted" style={{ marginTop: "0.5rem" }}>
           Finds tickers whose close/min ratio inside any rolling {windowWeeks}-week
-          window reached ≥ {threshold}x.
+          window reached ≥ {threshold}x. Price filter is instant. Market-cap filter
+          only matches symbols that have cap data loaded ({s?.assets_with_market_cap ?? 0}{" "}
+          available).
         </div>
       </div>
 

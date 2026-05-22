@@ -12,6 +12,7 @@ export interface Hit {
   exchange: string | null;
   sector: string | null;
   industry: string | null;
+  market_cap_usd: number | null;
   current_price: number | null;
   last_ts: string | null;
   days_since_peak: number | null;
@@ -24,11 +25,37 @@ export interface AssetMeta {
   exchange: string | null;
   sector: string | null;
   industry: string | null;
+  market_cap_usd: number | null;
   refreshed_at: string | null;
+}
+
+export interface AppStatus {
+  keys: { alpaca: boolean; finnhub: boolean; perplexity: boolean };
+  universe_symbols: number;
+  universe_refreshed_at: string | null;
+  bar_symbols: number;
+  hits: number;
+  assets: number;
+  assets_with_name: number;
+  assets_with_market_cap: number;
+  hit_symbols_missing_metadata: number;
+}
+
+export interface Spike {
+  date: string;
+  prior_date: string;
+  prior_close: number;
+  close: number;
+  single_day_multiplier: number;
 }
 
 export interface Catalyst {
   summary: string;
+  spike: Spike | null;
+  spike_explanation: string;
+  was_foreseeable: boolean | null;
+  foreseeable_evidence: string;
+  raw: string;
   fetched_at: string;
   model: string;
   error?: string;
