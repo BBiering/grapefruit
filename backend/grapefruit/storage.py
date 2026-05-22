@@ -66,10 +66,13 @@ def init_db() -> None:
                 exchange VARCHAR,
                 sector VARCHAR,
                 industry VARCHAR,
+                market_cap_usd DOUBLE,
                 refreshed_at TIMESTAMP
             )
             """
         )
+        # Older databases may predate market_cap_usd; add it idempotently.
+        con.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS market_cap_usd DOUBLE")
         con.execute("CREATE INDEX IF NOT EXISTS bars_symbol_idx ON bars(symbol)")
         con.execute("CREATE INDEX IF NOT EXISTS hits_window_idx ON hits(window_days)")
 
@@ -180,7 +183,7 @@ def query_hits(
             h.symbol, h.window_days, h.threshold,
             h.start_ts, h.end_ts,
             h.trough_price, h.peak_price, h.multiplier, h.scanned_at,
-            a.name, a.exchange, a.sector, a.industry,
+            a.name, a.exchange, a.sector, a.industry, a.market_cap_usd,
             l.current_price, l.last_ts,
             CASE WHEN l.last_ts IS NULL THEN NULL
                  ELSE CAST(date_diff('day', h.end_ts, l.last_ts) AS INTEGER)
@@ -215,19 +218,24 @@ def query_hits(
         return [dict(zip(cols, r, strict=True)) for r in rows]
 
 
+_ASSET_COLS = ("symbol", "name", "exchange", "sector", "industry", "market_cap_usd", "refreshed_at")
+
+
 def upsert_asset(row: dict) -> None:
+    row = {col: row.get(col) for col in _ASSET_COLS}
     df = pd.DataFrame([row])
     with _use_db() as con:
         con.register("incoming_asset", df)
         con.execute(
             """
-            INSERT INTO assets (symbol, name, exchange, sector, industry, refreshed_at)
-            SELECT symbol, name, exchange, sector, industry, refreshed_at FROM incoming_asset
+            INSERT INTO assets (symbol, name, exchange, sector, industry, market_cap_usd, refreshed_at)
+            SELECT symbol, name, exchange, sector, industry, market_cap_usd, refreshed_at FROM incoming_asset
             ON CONFLICT (symbol) DO UPDATE SET
                 name = EXCLUDED.name,
                 exchange = EXCLUDED.exchange,
                 sector = EXCLUDED.sector,
                 industry = EXCLUDED.industry,
+                market_cap_usd = EXCLUDED.market_cap_usd,
                 refreshed_at = EXCLUDED.refreshed_at
             """
         )
@@ -237,7 +245,7 @@ def upsert_asset(row: dict) -> None:
 def load_asset(symbol: str) -> dict | None:
     with _use_db() as con:
         cur = con.execute(
-            "SELECT symbol, name, exchange, sector, industry, refreshed_at FROM assets WHERE symbol = ?",
+            "SELECT symbol, name, exchange, sector, industry, market_cap_usd, refreshed_at FROM assets WHERE symbol = ?",
             [symbol],
         )
         row = cur.fetchone()
@@ -245,3 +253,44 @@ def load_asset(symbol: str) -> dict | None:
             return None
         cols = [d[0] for d in cur.description]
         return dict(zip(cols, row, strict=True))
+
+
+def symbols_with_market_cap_below(cap_usd: float) -> list[str]:
+    with _use_db() as con:
+        rows = con.execute(
+            "SELECT symbol FROM assets WHERE market_cap_usd IS NOT NULL AND market_cap_usd > 0 AND market_cap_usd <= ?",
+            [cap_usd],
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
+def symbols_with_last_close_below(price_usd: float) -> list[str]:
+    """Symbols whose most recent cached close is at or below `price_usd`."""
+    with _use_db() as con:
+        rows = con.execute(
+            """
+            WITH latest AS (
+                SELECT b.symbol, b.close FROM bars b
+                JOIN (SELECT symbol, MAX(ts) AS mx FROM bars GROUP BY symbol) m
+                  ON m.symbol = b.symbol AND m.mx = b.ts
+            )
+            SELECT symbol FROM latest WHERE close > 0 AND close <= ?
+            """,
+            [price_usd],
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
+def counts() -> dict:
+    with _use_db() as con:
+        return {
+            "bar_symbols": con.execute("SELECT COUNT(DISTINCT symbol) FROM bars").fetchone()[0],
+            "hits": con.execute("SELECT COUNT(*) FROM hits").fetchone()[0],
+            "assets": con.execute("SELECT COUNT(*) FROM assets").fetchone()[0],
+            "assets_with_name": con.execute(
+                "SELECT COUNT(*) FROM assets WHERE name IS NOT NULL AND name != ''"
+            ).fetchone()[0],
+            "assets_with_market_cap": con.execute(
+                "SELECT COUNT(*) FROM assets WHERE market_cap_usd IS NOT NULL"
+            ).fetchone()[0],
+        }

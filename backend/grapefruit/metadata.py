@@ -31,6 +31,7 @@ def fetch_metadata(symbol: str) -> dict:
         "exchange": None,
         "sector": None,
         "industry": None,
+        "market_cap_usd": None,
         "refreshed_at": datetime.now(timezone.utc),
     }
     if not settings.finnhub_api_key:
@@ -47,6 +48,10 @@ def fetch_metadata(symbol: str) -> dict:
         row["name"] = info.get("name") or None
         row["exchange"] = info.get("exchange") or None
         row["industry"] = info.get("finnhubIndustry") or None
+        # Finnhub reports marketCapitalization in millions of USD.
+        cap_m = info.get("marketCapitalization")
+        if isinstance(cap_m, (int, float)) and cap_m > 0:
+            row["market_cap_usd"] = float(cap_m) * 1_000_000
     except Exception as exc:  # noqa: BLE001
         log.warning("finnhub fetch failed for %s: %s", symbol, exc)
     return row

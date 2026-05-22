@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getBars, getCatalyst, getNews, getTickerMeta } from "../api";
 import PriceChart from "../components/PriceChart";
@@ -17,6 +17,7 @@ export default function TickerDetail() {
   const peak = params.get("peak") ?? undefined;
   const trough = params.get("trough") ?? undefined;
   const [fullHistory, setFullHistory] = useState(false);
+  const qc = useQueryClient();
 
   const [chartStart, chartEnd] = useMemo(() => {
     if (fullHistory || !trough || !peak) return [undefined, undefined] as const;
@@ -89,19 +90,37 @@ export default function TickerDetail() {
       </div>
 
       <div className="card">
-        <h3>Catalyst (AI, web-grounded)</h3>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <h3 style={{ margin: 0 }}>Why this stock moved</h3>
+          <button
+            onClick={() => qc.invalidateQueries({ queryKey: ["catalyst", symbol, peak] })}
+            disabled={!peak || catalyst.isFetching}
+          >
+            {catalyst.isFetching ? "Loading…" : "Refresh"}
+          </button>
+        </div>
+        <div className="muted" style={{ marginTop: "0.25rem", marginBottom: "0.75rem" }}>
+          One-sentence AI explanation from Perplexity (web-grounded, cached on disk).
+        </div>
         {!peak ? (
-          <div className="muted">no peak date in URL</div>
+          <div className="muted">Open a hit from the Hits page to see its catalyst.</div>
         ) : catalyst.isLoading ? (
-          <div className="muted">asking Perplexity…</div>
+          <div className="muted">Asking Perplexity…</div>
         ) : catalyst.data?.error === "no_key" ? (
-          <div className="muted">
-            Set <code>PERPLEXITY_API_KEY</code> in your <code>.env</code> to enable AI catalyst explanations.
+          <div>
+            <strong>PERPLEXITY_API_KEY is not set.</strong> Add it to{" "}
+            <code>.env</code> and restart the backend. Get a key at{" "}
+            <code>https://www.perplexity.ai/settings/api</code>.
           </div>
         ) : catalyst.data?.error ? (
-          <div className="muted">catalyst lookup failed: {catalyst.data.error}</div>
+          <div>
+            Perplexity lookup failed: <code>{catalyst.data.error}</code>. Click
+            Refresh to retry, or check the backend logs for the full error.
+          </div>
+        ) : catalyst.data?.summary ? (
+          <p style={{ margin: 0 }}>{catalyst.data.summary}</p>
         ) : (
-          <p>{catalyst.data?.summary}</p>
+          <div className="muted">Perplexity returned no answer.</div>
         )}
       </div>
 

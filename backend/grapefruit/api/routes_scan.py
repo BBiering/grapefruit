@@ -5,12 +5,14 @@ from pydantic import BaseModel, Field
 
 from grapefruit import bars as bars_mod
 from grapefruit import metadata, storage
+from grapefruit.config import settings
 from grapefruit.detector import detect_hits
-from grapefruit.jobs import JobState, new_job, run_async
+from grapefruit.jobs import JobState, list_jobs, new_job, run_async
 from grapefruit.universe import fetch_active_universe, load_universe
 
 
 ENRICH_TOP_N = 200
+_AUTO_ENRICH_JOB_KIND = "assets_enrich_auto"
 
 router = APIRouter()
 
@@ -29,6 +31,8 @@ class ScanBody(BaseModel):
     window_weeks: int = Field(ge=2, le=52)
     threshold: float = 10.0
     symbols: list[str] | None = None
+    max_price_usd: float | None = Field(default=None, gt=0)
+    max_market_cap_usd: float | None = Field(default=None, gt=0)
 
 
 @router.post("/api/universe/refresh", response_model=RefreshUniverseResponse)
@@ -80,6 +84,19 @@ def scan_historical(body: ScanBody) -> dict:
     symbols = body.symbols or storage.symbols_with_bars()
     if not symbols:
         raise HTTPException(400, "No bars cached. Call /api/bars/refresh first.")
+    # Optional small-cap filters: intersect with the requested set.
+    if body.max_price_usd is not None:
+        allowed = set(storage.symbols_with_last_close_below(body.max_price_usd))
+        symbols = [s for s in symbols if s in allowed]
+    if body.max_market_cap_usd is not None:
+        allowed = set(storage.symbols_with_market_cap_below(body.max_market_cap_usd))
+        symbols = [s for s in symbols if s in allowed]
+    if not symbols:
+        raise HTTPException(
+            400,
+            "No symbols match the requested filters. Loosen max_price_usd / max_market_cap_usd, "
+            "or run /api/assets/refresh_market_caps to populate cap data.",
+        )
 
     job = new_job("scan_historical")
     job.total = len(symbols)
@@ -145,6 +162,65 @@ def enrich_assets(limit: int = 500) -> dict:
     return {"job_id": job.job_id, "pending": len(pending)}
 
 
+@router.post("/api/assets/refresh_market_caps")
+def refresh_market_caps(limit: int | None = None) -> dict:
+    """Bulk-fetch Finnhub metadata (including market cap) for the entire universe.
+
+    Slow: free-tier Finnhub is 60 req/min, so 12k symbols takes ~3.5h. Runs as a
+    background job. Pass `limit` to cap the work for a smaller experiment.
+    """
+    if not settings.finnhub_api_key:
+        raise HTTPException(400, "FINNHUB_API_KEY not set. Add it to .env and restart.")
+    uni = load_universe()
+    if not uni:
+        raise HTTPException(400, "Universe not loaded. Call /api/universe/refresh first.")
+    symbols = uni["symbols"][:limit] if limit else uni["symbols"]
+    job = new_job("market_caps_refresh")
+    job.total = len(symbols)
+
+    def task(j: JobState):
+        filled = 0
+        for idx, sym in enumerate(symbols, start=1):
+            row = metadata.get_or_fetch(sym, refresh=True)
+            if row.get("market_cap_usd"):
+                filled += 1
+            j.processed = idx
+            j.message = f"{sym} ({idx}/{len(symbols)}, {filled} with cap)"
+        return {"symbols": len(symbols), "with_market_cap": filled}
+
+    run_async(job, task)
+    return {"job_id": job.job_id, "symbols": len(symbols)}
+
+
+def _trigger_auto_enrich() -> None:
+    """If hits have missing metadata and no auto-enrich job is already running, kick one off."""
+    if not settings.finnhub_api_key:
+        return
+    running = [
+        j for j in list_jobs()
+        if j["kind"] == _AUTO_ENRICH_JOB_KIND and j["status"] in ("pending", "running")
+    ]
+    if running:
+        return
+    pending = storage.hit_symbols_missing_metadata()
+    if not pending:
+        return
+    job = new_job(_AUTO_ENRICH_JOB_KIND)
+    job.total = len(pending)
+
+    def task(j: JobState):
+        enriched = 0
+        for idx, sym in enumerate(pending, start=1):
+            row = metadata.get_or_fetch(sym, refresh=True)
+            if row.get("name"):
+                enriched += 1
+            j.processed = idx
+            j.message = f"{sym} ({idx}/{len(pending)})"
+        return {"pending": len(pending), "enriched": enriched}
+
+    run_async(job, task)
+
+
 @router.get("/api/hits")
 def get_hits(
     window_weeks: int | None = None,
@@ -158,6 +234,7 @@ def get_hits(
         max_days_since_peak=max_days_since_peak,
         min_peak_retention=min_peak_retention,
     )
+    _trigger_auto_enrich()
     return [
         {
             **r,
@@ -168,6 +245,29 @@ def get_hits(
         }
         for r in rows
     ]
+
+
+@router.get("/api/status")
+def get_status() -> dict:
+    storage.init_db()
+    c = storage.counts()
+    uni = load_universe()
+    pending_enrich = len(storage.hit_symbols_missing_metadata())
+    return {
+        "keys": {
+            "alpaca": bool(settings.apca_api_key_id and settings.apca_api_secret_key),
+            "finnhub": bool(settings.finnhub_api_key),
+            "perplexity": bool(settings.perplexity_api_key),
+        },
+        "universe_symbols": uni["count"] if uni else 0,
+        "universe_refreshed_at": uni["refreshed_at"] if uni else None,
+        "bar_symbols": c["bar_symbols"],
+        "hits": c["hits"],
+        "assets": c["assets"],
+        "assets_with_name": c["assets_with_name"],
+        "assets_with_market_cap": c["assets_with_market_cap"],
+        "hit_symbols_missing_metadata": pending_enrich,
+    }
 
 
 def _iso(v) -> str | None:
