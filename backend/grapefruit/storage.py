@@ -122,6 +122,21 @@ def symbols_with_bars() -> list[str]:
         return [r[0] for r in rows]
 
 
+def hit_symbols_missing_metadata() -> list[str]:
+    """Symbols that have at least one hit but no usable name in `assets`."""
+    with _use_db() as con:
+        rows = con.execute(
+            """
+            SELECT DISTINCT h.symbol
+            FROM hits h
+            LEFT JOIN assets a ON a.symbol = h.symbol
+            WHERE a.name IS NULL OR a.name = ''
+            ORDER BY h.symbol
+            """
+        ).fetchall()
+        return [r[0] for r in rows]
+
+
 def save_hits(rows: list[dict], window_days: int, threshold: float) -> None:
     if not rows:
         return

@@ -122,6 +122,29 @@ def scan_historical(body: ScanBody) -> dict:
     return {"job_id": job.job_id}
 
 
+@router.post("/api/assets/enrich")
+def enrich_assets(limit: int = 500) -> dict:
+    """Backfill name/industry/exchange for hit symbols that don't have them yet."""
+    pending = storage.hit_symbols_missing_metadata()[:limit]
+    if not pending:
+        return {"pending": 0, "enriched": 0}
+    job = new_job("assets_enrich")
+    job.total = len(pending)
+
+    def task(j: JobState):
+        enriched = 0
+        for idx, sym in enumerate(pending, start=1):
+            row = metadata.get_or_fetch(sym, refresh=True)
+            if row.get("name"):
+                enriched += 1
+            j.processed = idx
+            j.message = f"{sym} ({idx}/{len(pending)})"
+        return {"pending": len(pending), "enriched": enriched}
+
+    run_async(job, task)
+    return {"job_id": job.job_id, "pending": len(pending)}
+
+
 @router.get("/api/hits")
 def get_hits(
     window_weeks: int | None = None,
