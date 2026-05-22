@@ -41,8 +41,21 @@ export interface AppStatus {
   hit_symbols_missing_metadata: number;
 }
 
+export interface Spike {
+  date: string;
+  prior_date: string;
+  prior_close: number;
+  close: number;
+  single_day_multiplier: number;
+}
+
 export interface Catalyst {
   summary: string;
+  spike: Spike | null;
+  spike_explanation: string;
+  was_foreseeable: boolean | null;
+  foreseeable_evidence: string;
+  raw: string;
   fetched_at: string;
   model: string;
   error?: string;

@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 
 from grapefruit import metadata, storage
 from grapefruit.catalyst import explain_move
+from grapefruit.detector import find_spike
 from grapefruit.news import fetch_news
 
 router = APIRouter()
@@ -50,7 +51,50 @@ def get_meta(symbol: str, refresh: bool = False) -> dict:
 
 
 @router.get("/api/tickers/{symbol}/catalyst")
-def get_catalyst(symbol: str, around: date, refresh: bool = False) -> dict:
+def get_catalyst(
+    symbol: str,
+    around: date,
+    start: date | None = None,
+    trough_price: float | None = None,
+    peak_price: float | None = None,
+    refresh: bool = False,
+) -> dict:
     sym = symbol.upper()
     meta = storage.load_asset(sym) or {}
-    return explain_move(sym, meta.get("name"), around, refresh=refresh)
+    spike = None
+    if start:
+        df = storage.load_symbol(sym, start=start, end=around)
+        if not df.empty:
+            spike = find_spike(
+                df["close"].to_numpy(dtype=float),
+                df["ts"].to_numpy(),
+                start,
+                around,
+            )
+    return explain_move(
+        sym,
+        meta.get("name"),
+        around,
+        trough_price=trough_price,
+        peak_price=peak_price,
+        start=start,
+        spike=spike,
+        refresh=refresh,
+    )
+
+
+@router.get("/api/tickers/{symbol}/spike")
+def get_spike(symbol: str, start: date, end: date) -> dict:
+    sym = symbol.upper()
+    df = storage.load_symbol(sym, start=start, end=end)
+    if df.empty:
+        raise HTTPException(404, f"No cached bars for {sym} in [{start}, {end}]")
+    spike = find_spike(
+        df["close"].to_numpy(dtype=float),
+        df["ts"].to_numpy(),
+        start,
+        end,
+    )
+    if spike is None:
+        raise HTTPException(404, "Window too short to compute a spike")
+    return spike

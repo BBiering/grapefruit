@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import numpy as np
 
-from grapefruit.detector import detect_hits
+from grapefruit.detector import detect_hits, find_spike
 
 
 def _dates(n: int):
@@ -80,6 +80,34 @@ def test_gap_in_dates_breaks_window():
     dates = np.array(first + second)
     hits = detect_hits("TEST", closes, dates, window=30, threshold=10.0)
     assert hits == []
+
+
+def test_find_spike_picks_largest_overnight_move():
+    closes = np.array([1.0, 1.0, 1.0, 1.0, 10.0, 11.0, 12.0, 12.0])
+    dates = _dates(8)
+    spike = find_spike(closes, dates, dates[0], dates[-1])
+    assert spike is not None
+    assert spike["single_day_multiplier"] == 10.0
+    assert spike["date"] == dates[4].isoformat()
+    assert spike["prior_close"] == 1.0
+    assert spike["close"] == 10.0
+
+
+def test_find_spike_window_too_short():
+    closes = np.array([1.0])
+    dates = _dates(1)
+    assert find_spike(closes, dates, dates[0], dates[0]) is None
+
+
+def test_find_spike_respects_window_bounds():
+    # Biggest jump (1->10) is at index 4 but we restrict to [day5, day7] where
+    # the moves are tiny.
+    closes = np.array([1.0, 1.0, 1.0, 1.0, 10.0, 11.0, 12.0, 12.0])
+    dates = _dates(8)
+    spike = find_spike(closes, dates, dates[5], dates[7])
+    assert spike is not None
+    assert spike["single_day_multiplier"] < 1.5
+    assert spike["date"] == dates[6].isoformat()
 
 
 def test_two_separate_rises_in_separate_runs_both_detected():

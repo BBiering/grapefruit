@@ -69,9 +69,13 @@ export async function getTickerMeta(symbol: string): Promise<AssetMeta> {
   return data;
 }
 
-export async function getCatalyst(symbol: string, around: string): Promise<Catalyst> {
+export async function getCatalyst(
+  symbol: string,
+  around: string,
+  opts: { start?: string; trough_price?: number; peak_price?: number; refresh?: boolean } = {}
+): Promise<Catalyst> {
   const { data } = await http.get<Catalyst>(`/api/tickers/${symbol}/catalyst`, {
-    params: { around },
+    params: { around, ...opts },
   });
   return data;
 }

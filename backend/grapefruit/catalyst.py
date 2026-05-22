@@ -1,8 +1,16 @@
-"""Perplexity-backed one-sentence catalyst explanations for big stock moves."""
+"""Perplexity-backed catalyst explanations for big stock moves.
+
+For each hit we cache a single JSON blob covering:
+- the overall trough->peak catalyst,
+- the sharpest single-session jump inside the window (if any),
+- whether that jump was foreseeable from public information beforehand,
+- and the pre-existing signal, if any.
+"""
 from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import date, datetime, timezone
 
 import httpx
@@ -26,9 +34,11 @@ def explain_move(
     around: date,
     trough_price: float | None = None,
     peak_price: float | None = None,
+    start: date | None = None,
+    spike: dict | None = None,
     refresh: bool = False,
 ) -> dict:
-    """Return {summary, fetched_at, model, error?}. Cached forever on disk."""
+    """Return a structured catalyst report. Cached forever on disk per (symbol, around)."""
     cache = _cache_path(symbol, around)
     if cache.exists() and not refresh:
         try:
@@ -36,23 +46,55 @@ def explain_move(
         except json.JSONDecodeError:
             pass
 
+    base = {
+        "summary": "",
+        "spike": spike,
+        "spike_explanation": "",
+        "was_foreseeable": None,
+        "foreseeable_evidence": "",
+        "raw": "",
+        "fetched_at": datetime.now(timezone.utc).isoformat(),
+        "model": _MODEL,
+    }
+
     if not settings.perplexity_api_key:
-        return {
-            "summary": "",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "model": _MODEL,
-            "error": "no_key",
-        }
+        return {**base, "error": "no_key"}
 
     label = f"{symbol} ({name})" if name else symbol
+    period = f"around {around.isoformat()}"
+    if start:
+        period = f"from {start.isoformat()} to {around.isoformat()}"
     move = ""
     if trough_price and peak_price:
-        move = f" — the stock moved from about ${trough_price:.2f} to ${peak_price:.2f}"
+        move = (
+            f" The stock rose from about ${trough_price:.2f} to about "
+            f"${peak_price:.2f} ({peak_price / trough_price:.1f}x)."
+        )
+    spike_section = ""
+    if spike:
+        spike_section = (
+            f" Within the window, the single sharpest move was on "
+            f"{spike['date']}: ${spike['prior_close']:.2f} -> ${spike['close']:.2f} "
+            f"({spike['single_day_multiplier']:.1f}x in one trading session)."
+        )
+
     user_msg = (
-        f"What was the primary catalyst behind the sharp price increase of {label} "
-        f"around {around.isoformat()}{move}? Answer in one or two sentences. "
-        "Be specific (product launch, earnings beat, deal, FDA approval, etc.) "
-        "and cite the approximate date if relevant."
+        f"Stock: {label}.\n"
+        f"Window: {period}.{move}{spike_section}\n\n"
+        "Reply with a JSON object only (no surrounding prose). Schema:\n"
+        "{\n"
+        '  "summary": "1-2 sentences on the primary catalyst for the overall rise",\n'
+        '  "spike_explanation": "1-2 sentences on what news/event/filing drove the '
+        f"{spike['date'] if spike else 'sharpest'} single-session jump specifically; "
+        'say so if the rise was gradual rather than event-driven",\n'
+        '  "was_foreseeable": true or false (was there PUBLIC information '
+        "BEFORE the spike date that a careful trader could have used to anticipate "
+        "this move? e.g. scheduled FDA decision, trial readout date, earnings date, "
+        'patent expiry, contract award timeline),\n'
+        '  "foreseeable_evidence": "if was_foreseeable is true, describe the '
+        'pre-existing public signal in one sentence with approximate date; otherwise '
+        'empty string"\n'
+        "}"
     )
 
     payload = {
@@ -61,9 +103,9 @@ def explain_move(
             {
                 "role": "system",
                 "content": (
-                    "You are a financial research assistant. Identify the most likely "
-                    "real-world catalyst for a sharp move in a US-listed stock. Be "
-                    "concrete; if no clear catalyst exists, say so."
+                    "You are a financial research assistant. Identify real-world "
+                    "catalysts for sharp US-equity moves. Return only the JSON object "
+                    "matching the user's schema; do not wrap it in prose or fences."
                 ),
             },
             {"role": "user", "content": user_msg},
@@ -75,30 +117,58 @@ def explain_move(
     }
 
     try:
-        resp = httpx.post(_PPLX_URL, headers=headers, json=payload, timeout=30.0)
+        resp = httpx.post(_PPLX_URL, headers=headers, json=payload, timeout=45.0)
         resp.raise_for_status()
         data = resp.json()
-        summary = data["choices"][0]["message"]["content"].strip()
+        raw = data["choices"][0]["message"]["content"].strip()
+        parsed = _parse_json_response(raw)
         result = {
-            "summary": summary,
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "model": _MODEL,
+            **base,
+            "summary": (parsed.get("summary") or "").strip(),
+            "spike_explanation": (parsed.get("spike_explanation") or "").strip(),
+            "was_foreseeable": parsed.get("was_foreseeable")
+            if isinstance(parsed.get("was_foreseeable"), bool)
+            else None,
+            "foreseeable_evidence": (parsed.get("foreseeable_evidence") or "").strip(),
+            "raw": raw,
         }
+        if not result["summary"] and not parsed:
+            # Couldn't parse JSON; fall back to the raw text as the summary so the
+            # user still sees something useful.
+            result["summary"] = raw
         cache.write_text(json.dumps(result))
         return result
     except httpx.HTTPStatusError as exc:
-        log.warning("perplexity %s returned %s", symbol, exc.response.status_code)
-        return {
-            "summary": "",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "model": _MODEL,
-            "error": f"http_{exc.response.status_code}",
-        }
+        body = ""
+        try:
+            body = exc.response.text[:500]
+        except Exception:  # noqa: BLE001
+            pass
+        log.warning("perplexity %s returned %s: %s", symbol, exc.response.status_code, body)
+        return {**base, "error": f"http_{exc.response.status_code}"}
     except Exception as exc:  # noqa: BLE001
         log.warning("perplexity fetch failed for %s: %s", symbol, exc)
-        return {
-            "summary": "",
-            "fetched_at": datetime.now(timezone.utc).isoformat(),
-            "model": _MODEL,
-            "error": "fetch_failed",
-        }
+        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
+
+
+_JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+_BARE_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _parse_json_response(text: str) -> dict:
+    """Pull a JSON object out of Perplexity's reply, robust to fences and prose."""
+    if not text:
+        return {}
+    # Try fenced ```json blocks first.
+    m = _JSON_BLOCK_RE.search(text)
+    candidate = m.group(1) if m else None
+    if candidate is None:
+        m2 = _BARE_JSON_RE.search(text)
+        candidate = m2.group(0) if m2 else None
+    if candidate is None:
+        return {}
+    try:
+        obj = json.loads(candidate)
+        return obj if isinstance(obj, dict) else {}
+    except json.JSONDecodeError:
+        return {}
