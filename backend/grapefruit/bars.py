@@ -8,28 +8,10 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
 from grapefruit.alpaca_client import get_data_client
+from grapefruit.rate_limit import TokenBucket
 
 BATCH_SIZE = 200
 RATE_LIMIT_PER_MIN = 180  # leave headroom under the 200/min free-tier cap
-
-
-class TokenBucket:
-    """Simple per-minute rate limiter."""
-
-    def __init__(self, per_min: int = RATE_LIMIT_PER_MIN):
-        self.per_min = per_min
-        self.timestamps: list[float] = []
-
-    def acquire(self) -> None:
-        now = time.monotonic()
-        self.timestamps = [t for t in self.timestamps if now - t < 60.0]
-        if len(self.timestamps) >= self.per_min:
-            sleep_for = 60.0 - (now - self.timestamps[0]) + 0.05
-            if sleep_for > 0:
-                time.sleep(sleep_for)
-            now = time.monotonic()
-            self.timestamps = [t for t in self.timestamps if now - t < 60.0]
-        self.timestamps.append(now)
 
 
 def _bars_response_to_df(bars_by_symbol: dict) -> pd.DataFrame:
@@ -96,7 +78,7 @@ def fetch_bars(
 ) -> pd.DataFrame:
     end = date.today()
     start = end - timedelta(days=years * 365 + 30)
-    bucket = TokenBucket()
+    bucket = TokenBucket(RATE_LIMIT_PER_MIN)
     frames: list[pd.DataFrame] = []
     total = len(symbols)
     for i in range(0, total, BATCH_SIZE):

@@ -13,15 +13,20 @@ import logging
 import re
 from datetime import date, datetime, timezone
 
+import time
+
 import httpx
 
 from grapefruit.config import CATALYST_CACHE_DIR, settings
+from grapefruit.rate_limit import PERPLEXITY_BUCKET, redact
 
 
 log = logging.getLogger(__name__)
 
 _PPLX_URL = "https://api.perplexity.ai/chat/completions"
 _MODEL = "sonar"
+_MAX_RETRIES = 3
+_MAX_RETRY_SLEEP = 60.0
 
 
 def _cache_path(symbol: str, around: date):
@@ -121,8 +126,9 @@ def explain_move(
     }
 
     try:
-        resp = httpx.post(_PPLX_URL, headers=headers, json=payload, timeout=45.0)
-        resp.raise_for_status()
+        resp = _post_with_retry(headers, payload, symbol)
+        if resp is None:
+            return {**base, "error": "rate_limited"}
         data = resp.json()
         raw = data["choices"][0]["message"]["content"].strip()
         parsed = _parse_json_response(raw)
@@ -146,14 +152,42 @@ def explain_move(
     except httpx.HTTPStatusError as exc:
         body = ""
         try:
-            body = exc.response.text[:500]
+            body = redact(exc.response.text[:500])
         except Exception:  # noqa: BLE001
             pass
         log.warning("perplexity %s returned %s: %s", symbol, exc.response.status_code, body)
         return {**base, "error": f"http_{exc.response.status_code}"}
     except Exception as exc:  # noqa: BLE001
-        log.warning("perplexity fetch failed for %s: %s", symbol, exc)
+        log.warning("perplexity fetch failed for %s: %s", symbol, redact(str(exc)))
         return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
+
+
+def _post_with_retry(headers: dict, payload: dict, symbol: str) -> httpx.Response | None:
+    """POST to Perplexity with rate-limiting and 429 retry. Returns the response or None."""
+    for attempt in range(_MAX_RETRIES):
+        PERPLEXITY_BUCKET.acquire()
+        resp = httpx.post(_PPLX_URL, headers=headers, json=payload, timeout=45.0)
+        if resp.status_code == 429:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            log.warning(
+                "perplexity 429 for %s; sleeping %.1fs (attempt %d/%d)",
+                symbol, retry_after, attempt + 1, _MAX_RETRIES,
+            )
+            time.sleep(retry_after)
+            continue
+        resp.raise_for_status()
+        return resp
+    log.warning("perplexity gave up on %s after %d 429s", symbol, _MAX_RETRIES)
+    return None
+
+
+def _parse_retry_after(header: str | None) -> float:
+    if not header:
+        return 5.0
+    try:
+        return min(float(header), _MAX_RETRY_SLEEP)
+    except ValueError:
+        return 5.0
 
 
 _JSON_BLOCK_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
