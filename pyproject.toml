@@ -1,13 +1,12 @@
 [project]
 name = "grapefruit"
 version = "0.1.0"
-description = "High-growth US equity selector backed by Alpaca data"
+description = "High-growth US equity selector backed by EODHD data"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
-    "alpaca-py>=0.33",
     "python-dotenv>=1.0",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",

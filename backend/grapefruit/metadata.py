@@ -1,37 +1,41 @@
-"""Finnhub-backed asset metadata (name, industry, exchange, market cap).
+"""EODHD-backed asset metadata (name, exchange, market cap).
 
-Finnhub's free `/stock/profile2` endpoint is far more reliable in cloud
-environments than yfinance. It returns `name`, `finnhubIndustry`,
-`exchange`, and `marketCapitalization` (in millions of USD). There's no
-separate `sector` field on the free tier.
+This subscription tier does not include the per-symbol `/fundamentals` endpoint
+(it returns 403), so sector/industry are unavailable and stay None. Instead we
+use the `eod-bulk-last-day/US?filter=extended` endpoint, which returns `name`
+and `MarketCapitalization` (absolute USD) for the *entire US exchange in a single
+request*. That one call costs the same quota whether filtered to one symbol or
+not, so bulk refreshes pull the whole exchange at once via `bulk_refresh()`.
 
-Calls are rate-limited via the shared FINNHUB_BUCKET (55/min) and the
-function retries on HTTP 429 honoring Retry-After. Cached in DuckDB via
-storage.upsert_asset / load_asset.
+Cached in DuckDB via storage.upsert_asset / load_asset.
 """
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime, timezone
 
-import httpx
-
-from grapefruit import storage
+from grapefruit import eodhd_client, storage
 from grapefruit.config import settings
-from grapefruit.rate_limit import FINNHUB_BUCKET, redact
-
+from grapefruit.rate_limit import redact
 
 log = logging.getLogger(__name__)
 
-_FINNHUB_URL = "https://finnhub.io/api/v1/stock/profile2"
-_MAX_RETRIES = 3
-_MAX_RETRY_SLEEP = 60.0
+
+def _record_to_row(rec: dict, now: datetime) -> dict:
+    cap = rec.get("MarketCapitalization")
+    return {
+        "symbol": (rec.get("code") or "").upper(),
+        "name": rec.get("name") or None,
+        "exchange": rec.get("exchange_short_name") or None,
+        "sector": None,
+        "industry": None,
+        "market_cap_usd": float(cap) if isinstance(cap, (int, float)) and cap > 0 else None,
+        "refreshed_at": now,
+    }
 
 
-def fetch_metadata(symbol: str) -> dict:
-    """Fetch fresh metadata from Finnhub. Never raises; missing fields are None."""
-    row = {
+def _empty_row(symbol: str) -> dict:
+    return {
         "symbol": symbol,
         "name": None,
         "exchange": None,
@@ -40,55 +44,20 @@ def fetch_metadata(symbol: str) -> dict:
         "market_cap_usd": None,
         "refreshed_at": datetime.now(timezone.utc),
     }
-    if not settings.finnhub_api_key:
-        log.warning("FINNHUB_API_KEY not set; metadata for %s will be empty", symbol)
-        return row
+
+
+def fetch_metadata(symbol: str) -> dict:
+    """Fetch fresh metadata for a single symbol. Never raises; missing fields are None."""
+    if not settings.eodhd_api_key:
+        log.warning("EODHD_API_KEY not set; metadata for %s will be empty", symbol)
+        return _empty_row(symbol)
     try:
-        info = _get_profile(symbol)
-        if info is None:
-            return row
-        row["name"] = info.get("name") or None
-        row["exchange"] = info.get("exchange") or None
-        row["industry"] = info.get("finnhubIndustry") or None
-        cap_m = info.get("marketCapitalization")
-        if isinstance(cap_m, (int, float)) and cap_m > 0:
-            row["market_cap_usd"] = float(cap_m) * 1_000_000
+        recs = eodhd_client.fetch_bulk_extended([symbol])
+        if recs:
+            return _record_to_row(recs[0], datetime.now(timezone.utc))
     except Exception as exc:  # noqa: BLE001
-        log.warning("finnhub fetch failed for %s: %s", symbol, redact(str(exc)))
-    return row
-
-
-def _get_profile(symbol: str) -> dict | None:
-    """GET /stock/profile2 with rate-limiting and 429 retry. Returns parsed JSON or None."""
-    for attempt in range(_MAX_RETRIES):
-        FINNHUB_BUCKET.acquire()
-        resp = httpx.get(
-            _FINNHUB_URL,
-            params={"symbol": symbol, "token": settings.finnhub_api_key},
-            timeout=15.0,
-        )
-        if resp.status_code == 429:
-            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
-            log.warning(
-                "finnhub 429 for %s; sleeping %.1fs (attempt %d/%d)",
-                symbol, retry_after, attempt + 1, _MAX_RETRIES,
-            )
-            time.sleep(retry_after)
-            continue
-        resp.raise_for_status()
-        data = resp.json()
-        return data if isinstance(data, dict) else None
-    log.warning("finnhub gave up on %s after %d 429s", symbol, _MAX_RETRIES)
-    return None
-
-
-def _parse_retry_after(header: str | None) -> float:
-    if not header:
-        return 5.0
-    try:
-        return min(float(header), _MAX_RETRY_SLEEP)
-    except ValueError:
-        return 5.0
+        log.warning("eodhd metadata fetch failed for %s: %s", symbol, redact(str(exc)))
+    return _empty_row(symbol)
 
 
 def get_or_fetch(symbol: str, refresh: bool = False) -> dict:
@@ -100,3 +69,26 @@ def get_or_fetch(symbol: str, refresh: bool = False) -> dict:
     row = fetch_metadata(symbol)
     storage.upsert_asset(row)
     return row
+
+
+def bulk_refresh(symbols: list[str] | None = None) -> int:
+    """Pull name + market cap for the whole US exchange in one call and upsert.
+
+    If `symbols` is given, only those are written (others in the response are
+    ignored). Returns the number of rows upserted with a usable name. This is the
+    quota-efficient path: one API request regardless of universe size.
+    """
+    records = eodhd_client.fetch_bulk_extended()
+    now = datetime.now(timezone.utc)
+    wanted = {s.upper() for s in symbols} if symbols else None
+    written = 0
+    for rec in records:
+        row = _record_to_row(rec, now)
+        if not row["symbol"]:
+            continue
+        if wanted is not None and row["symbol"] not in wanted:
+            continue
+        storage.upsert_asset(row)
+        if row["name"]:
+            written += 1
+    return written

@@ -35,7 +35,7 @@ export interface AssetMeta {
 }
 
 export interface AppStatus {
-  keys: { alpaca: boolean; finnhub: boolean; perplexity: boolean };
+  keys: { eodhd: boolean; perplexity: boolean };
   universe_symbols: number;
   universe_refreshed_at: string | null;
   bar_symbols: number;

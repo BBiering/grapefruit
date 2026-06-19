@@ -107,21 +107,21 @@ export default function HitsList() {
       {showEnrichBanner && (
         <div
           className="card"
-          style={{ background: s?.keys.finnhub ? "#1f2a3a" : "#3a1f1f" }}
+          style={{ background: s?.keys.eodhd ? "#1f2a3a" : "#3a1f1f" }}
         >
           <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
             <span>
-              {s?.keys.finnhub ? (
+              {s?.keys.eodhd ? (
                 <>
                   <strong>
                     {s?.hit_symbols_missing_metadata ?? missingNames} hit symbols
                   </strong>{" "}
                   are missing company name / industry. Click to backfill from
-                  Finnhub (runs in background).
+                  EODHD (runs in background).
                 </>
               ) : (
                 <>
-                  <strong>FINNHUB_API_KEY is not set.</strong> Add it to{" "}
+                  <strong>EODHD_API_KEY is not set.</strong> Add it to{" "}
                   <code>.env</code> and restart the backend to populate name /
                   industry / market cap.
                 </>
@@ -129,7 +129,7 @@ export default function HitsList() {
             </span>
             <button
               onClick={() => enrichMut.mutate()}
-              disabled={!s?.keys.finnhub || enrichMut.isPending}
+              disabled={!s?.keys.eodhd || enrichMut.isPending}
             >
               {enrichMut.isPending ? "Starting…" : "Enrich now"}
             </button>

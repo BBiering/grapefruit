@@ -17,10 +17,8 @@ UNIVERSE_PATH = DATA_DIR / "universe.json"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(REPO_ROOT / ".env"), extra="ignore")
 
-    apca_api_key_id: str = ""
-    apca_api_secret_key: str = ""
+    eodhd_api_key: str = ""
     perplexity_api_key: str = ""
-    finnhub_api_key: str = ""
 
 
 settings = Settings()

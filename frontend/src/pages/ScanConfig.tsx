@@ -74,7 +74,7 @@ export default function ScanConfig() {
   }, [activeJobId, qc]);
 
   const s = status.data;
-  const missingKey = s && (!s.keys.finnhub || !s.keys.perplexity);
+  const missingKey = s && (!s.keys.eodhd || !s.keys.perplexity);
 
   return (
     <div>
@@ -83,8 +83,8 @@ export default function ScanConfig() {
           <h3>Status</h3>
           <div className="row" style={{ gap: "1rem", flexWrap: "wrap" }}>
             <span>
-              Keys: alpaca {s.keys.alpaca ? "✓" : "✗"} · finnhub{" "}
-              {s.keys.finnhub ? "✓" : "✗"} · perplexity {s.keys.perplexity ? "✓" : "✗"}
+              Keys: eodhd {s.keys.eodhd ? "✓" : "✗"} · perplexity{" "}
+              {s.keys.perplexity ? "✓" : "✗"}
             </span>
             <span className="muted">
               {s.universe_symbols} universe · {s.bar_symbols} with bars · {s.hits} hits ·{" "}
@@ -134,17 +134,17 @@ export default function ScanConfig() {
       </div>
 
       <div className="card">
-        <h2>Market caps (Finnhub)</h2>
+        <h2>Market caps (EODHD)</h2>
         <div className="row">
           <button
             onClick={() => refreshCapsMut.mutate()}
-            disabled={refreshCapsMut.isPending || !s?.keys.finnhub}
+            disabled={refreshCapsMut.isPending || !s?.keys.eodhd}
           >
             Backfill market caps
           </button>
           <span className="muted">
-            Pulls name, industry, and market cap for every universe symbol.
-            Finnhub free tier is 60 req/min, so ~3.5h for 12k symbols. Runs in
+            Pulls name, sector, industry, and market cap for every universe symbol.
+            EODHD allows ~1000 req/min, so the full universe takes minutes. Runs in
             background. Required before <code>max_market_cap_usd</code> filtering works.
           </span>
         </div>

@@ -126,13 +126,14 @@ def scan_historical(body: ScanBody) -> dict:
             j.message = f"scanned {sym} ({i}/{len(symbols)})"
         storage.save_hits(all_hits, window_days, threshold)
         # Lazily enrich metadata for the strongest hits so the UI table isn't empty.
+        # One bulk call covers them all (the endpoint returns the whole exchange).
         top = sorted(all_hits, key=lambda h: h["multiplier"], reverse=True)[:ENRICH_TOP_N]
-        for idx, h in enumerate(top, start=1):
+        if top:
+            j.message = f"enriching {len(top)} symbols"
             try:
-                metadata.get_or_fetch(h["symbol"])
+                metadata.bulk_refresh([h["symbol"] for h in top])
             except Exception:  # noqa: BLE001
                 pass
-            j.message = f"enriching {h['symbol']} ({idx}/{len(top)})"
         return {"hits": len(all_hits), "window_days": window_days, "threshold": threshold}
 
     run_async(job, task)
@@ -141,7 +142,7 @@ def scan_historical(body: ScanBody) -> dict:
 
 @router.post("/api/assets/enrich")
 def enrich_assets(limit: int = 500) -> dict:
-    """Backfill name/industry/exchange for hit symbols that don't have them yet."""
+    """Backfill name/exchange/market cap for hit symbols that don't have them yet."""
     pending = storage.hit_symbols_missing_metadata()[:limit]
     if not pending:
         return {"pending": 0, "enriched": 0}
@@ -149,13 +150,9 @@ def enrich_assets(limit: int = 500) -> dict:
     job.total = len(pending)
 
     def task(j: JobState):
-        enriched = 0
-        for idx, sym in enumerate(pending, start=1):
-            row = metadata.get_or_fetch(sym, refresh=True)
-            if row.get("name"):
-                enriched += 1
-            j.processed = idx
-            j.message = f"{sym} ({idx}/{len(pending)})"
+        j.message = f"enriching {len(pending)} symbols"
+        enriched = metadata.bulk_refresh(pending)
+        j.processed = len(pending)
         return {"pending": len(pending), "enriched": enriched}
 
     run_async(job, task)
@@ -164,13 +161,15 @@ def enrich_assets(limit: int = 500) -> dict:
 
 @router.post("/api/assets/refresh_market_caps")
 def refresh_market_caps(limit: int | None = None) -> dict:
-    """Bulk-fetch Finnhub metadata (including market cap) for the entire universe.
+    """Bulk-fetch EODHD metadata (name + market cap) for the entire universe.
 
-    Slow: free-tier Finnhub is 60 req/min, so 12k symbols takes ~3.5h. Runs as a
-    background job. Pass `limit` to cap the work for a smaller experiment.
+    The `eod-bulk-last-day/US?filter=extended` endpoint returns every US symbol in
+    a single request, so this is one API call regardless of universe size. Runs as
+    a background job. `limit` is accepted for API compatibility but ignored — the
+    bulk endpoint returns the whole exchange anyway.
     """
-    if not settings.finnhub_api_key:
-        raise HTTPException(400, "FINNHUB_API_KEY not set. Add it to .env and restart.")
+    if not settings.eodhd_api_key:
+        raise HTTPException(400, "EODHD_API_KEY not set. Add it to .env and restart.")
     uni = load_universe()
     if not uni:
         raise HTTPException(400, "Universe not loaded. Call /api/universe/refresh first.")
@@ -179,13 +178,9 @@ def refresh_market_caps(limit: int | None = None) -> dict:
     job.total = len(symbols)
 
     def task(j: JobState):
-        filled = 0
-        for idx, sym in enumerate(symbols, start=1):
-            row = metadata.get_or_fetch(sym, refresh=True)
-            if row.get("market_cap_usd"):
-                filled += 1
-            j.processed = idx
-            j.message = f"{sym} ({idx}/{len(symbols)}, {filled} with cap)"
+        j.message = f"bulk-fetching metadata for {len(symbols)} symbols"
+        filled = metadata.bulk_refresh(symbols)
+        j.processed = len(symbols)
         return {"symbols": len(symbols), "with_market_cap": filled}
 
     run_async(job, task)
@@ -194,7 +189,7 @@ def refresh_market_caps(limit: int | None = None) -> dict:
 
 def _trigger_auto_enrich() -> None:
     """If hits have missing metadata and no auto-enrich job is already running, kick one off."""
-    if not settings.finnhub_api_key:
+    if not settings.eodhd_api_key:
         return
     running = [
         j for j in list_jobs()
@@ -209,13 +204,9 @@ def _trigger_auto_enrich() -> None:
     job.total = len(pending)
 
     def task(j: JobState):
-        enriched = 0
-        for idx, sym in enumerate(pending, start=1):
-            row = metadata.get_or_fetch(sym, refresh=True)
-            if row.get("name"):
-                enriched += 1
-            j.processed = idx
-            j.message = f"{sym} ({idx}/{len(pending)})"
+        j.message = f"enriching {len(pending)} symbols"
+        enriched = metadata.bulk_refresh(pending)
+        j.processed = len(pending)
         return {"pending": len(pending), "enriched": enriched}
 
     run_async(job, task)
@@ -259,8 +250,7 @@ def get_status() -> dict:
     pending_enrich = len(storage.hit_symbols_missing_metadata())
     return {
         "keys": {
-            "alpaca": bool(settings.apca_api_key_id and settings.apca_api_secret_key),
-            "finnhub": bool(settings.finnhub_api_key),
+            "eodhd": bool(settings.eodhd_api_key),
             "perplexity": bool(settings.perplexity_api_key),
         },
         "universe_symbols": uni["count"] if uni else 0,

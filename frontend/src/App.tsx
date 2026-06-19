@@ -9,9 +9,9 @@ export default function App() {
     <div className="app">
       <h1>🍊 Grapefruit</h1>
       <div className="banner">
-        <strong>Survivorship bias:</strong> Alpaca's asset list only includes currently
-        active, tradable tickers. Delisted, acquired, and bankrupt stocks are silently
-        absent. Treat every hit as filtered through survivorship.
+        <strong>Survivorship bias:</strong> EODHD's US symbol list is dominated by
+        currently active, tradable tickers. Delisted, acquired, and bankrupt stocks are
+        largely absent. Treat every hit as filtered through survivorship.
       </div>
       <nav>
         <NavLink to="/" end>Scan</NavLink>

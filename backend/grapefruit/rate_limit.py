@@ -24,8 +24,8 @@ class TokenBucket:
         self.timestamps.append(now)
 
 
-# Finnhub free tier is 60/min. Stay a touch below.
-FINNHUB_BUCKET = TokenBucket(per_min=55)
+# EODHD allows 1000/min; stay below with headroom for concurrent workers.
+EODHD_BUCKET = TokenBucket(per_min=900)
 # Perplexity sonar tiers vary; 40/min keeps us under free + low-tier paid limits.
 PERPLEXITY_BUCKET = TokenBucket(per_min=40)
 

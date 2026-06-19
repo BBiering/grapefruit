@@ -1,74 +1,49 @@
-import time
 from collections.abc import Callable
-from datetime import date, datetime, timedelta, timezone
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date, timedelta
 
 import pandas as pd
-from alpaca.data.enums import Adjustment, DataFeed
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
 
-from grapefruit.alpaca_client import get_data_client
-from grapefruit.rate_limit import TokenBucket
+from grapefruit import eodhd_client
 
-BATCH_SIZE = 200
-RATE_LIMIT_PER_MIN = 180  # leave headroom under the 200/min free-tier cap
+MAX_WORKERS = 16  # EODHD_BUCKET (900/min) is the real throttle; workers just block on it
+
+_COLUMNS = ["symbol", "ts", "open", "high", "low", "close", "volume"]
 
 
-def _bars_response_to_df(bars_by_symbol: dict) -> pd.DataFrame:
+def _eod_to_rows(symbol: str, bars: list[dict]) -> list[dict]:
+    """Map EODHD EOD bars to our row shape, scaling OHLC to be split/dividend-adjusted.
+
+    EODHD's open/high/low/close are unadjusted; adjusted_close is fully adjusted.
+    We store the adjusted close and scale OHLC by the same ratio so candles stay
+    internally consistent (matches Alpaca's Adjustment.ALL behavior).
+    """
     rows = []
-    for symbol, bars in bars_by_symbol.items():
-        for b in bars:
-            ts = b.timestamp
-            if isinstance(ts, datetime):
-                ts = ts.date()
-            rows.append(
-                {
-                    "symbol": symbol,
-                    "ts": ts,
-                    "open": float(b.open),
-                    "high": float(b.high),
-                    "low": float(b.low),
-                    "close": float(b.close),
-                    "volume": int(b.volume or 0),
-                }
-            )
-    if not rows:
-        return pd.DataFrame(
-            columns=["symbol", "ts", "open", "high", "low", "close", "volume"]
+    for b in bars:
+        close = b.get("close")
+        adj = b.get("adjusted_close")
+        ts = b.get("date")
+        if close in (None, 0) or adj is None or ts is None:
+            continue
+        ratio = float(adj) / float(close)
+        rows.append(
+            {
+                "symbol": symbol,
+                "ts": date.fromisoformat(ts),
+                "open": float(b["open"]) * ratio,
+                "high": float(b["high"]) * ratio,
+                "low": float(b["low"]) * ratio,
+                "close": float(adj),
+                "volume": int(b.get("volume") or 0),
+            }
         )
-    return pd.DataFrame(rows)
+    return rows
 
 
-def fetch_bars_batch(
-    symbols: list[str],
-    start: date,
-    end: date,
-    bucket: TokenBucket,
-    max_retries: int = 4,
-) -> pd.DataFrame:
-    client = get_data_client()
-    req = StockBarsRequest(
-        symbol_or_symbols=symbols,
-        timeframe=TimeFrame.Day,
-        start=datetime.combine(start, datetime.min.time(), tzinfo=timezone.utc),
-        end=datetime.combine(end, datetime.min.time(), tzinfo=timezone.utc),
-        feed=DataFeed.IEX,
-        adjustment=Adjustment.ALL,
-    )
-    attempt = 0
-    while True:
-        bucket.acquire()
-        try:
-            resp = client.get_stock_bars(req)
-            return _bars_response_to_df(resp.data)
-        except Exception as exc:  # noqa: BLE001 — retry on transient errors
-            attempt += 1
-            if attempt > max_retries:
-                raise
-            time.sleep(2**attempt)
-            if "429" not in str(exc) and "rate" not in str(exc).lower():
-                # non-rate-limit error: still retry but log nothing more here
-                pass
+def fetch_bars_one(symbol: str, start: date, end: date) -> list[dict]:
+    """Fetch + adjust daily bars for a single symbol. Never raises on data issues."""
+    bars = eodhd_client.fetch_eod(symbol, start, end)
+    return _eod_to_rows(symbol, bars)
 
 
 def fetch_bars(
@@ -78,18 +53,22 @@ def fetch_bars(
 ) -> pd.DataFrame:
     end = date.today()
     start = end - timedelta(days=years * 365 + 30)
-    bucket = TokenBucket(RATE_LIMIT_PER_MIN)
-    frames: list[pd.DataFrame] = []
     total = len(symbols)
-    for i in range(0, total, BATCH_SIZE):
-        batch = symbols[i : i + BATCH_SIZE]
-        df = fetch_bars_batch(batch, start, end, bucket)
-        if not df.empty:
-            frames.append(df)
-        if progress:
-            progress(min(i + BATCH_SIZE, total), total, f"fetched batch {i // BATCH_SIZE + 1}")
-    if not frames:
-        return pd.DataFrame(
-            columns=["symbol", "ts", "open", "high", "low", "close", "volume"]
-        )
-    return pd.concat(frames, ignore_index=True)
+    rows: list[dict] = []
+    done = 0
+
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(fetch_bars_one, sym, start, end): sym for sym in symbols}
+        for fut in as_completed(futures):
+            sym = futures[fut]
+            try:
+                rows.extend(fut.result())
+            except Exception:  # noqa: BLE001 — skip a symbol that failed all retries
+                pass
+            done += 1
+            if progress:
+                progress(done, total, f"fetched {sym} ({done}/{total})")
+
+    if not rows:
+        return pd.DataFrame(columns=_COLUMNS)
+    return pd.DataFrame(rows)
