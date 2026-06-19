@@ -1,7 +1,7 @@
 import axios from "axios";
 import type { AppStatus, Article, AssetMeta, Bar, Candidate, Catalyst, Hit, Job, Universe } from "./types";
 
-const http = axios.create({ baseURL: "" });
+const http = axios.create({ baseURL: import.meta.env.VITE_API_BASE_URL ?? "" });
 
 export async function getUniverse(): Promise<Universe> {
   const { data } = await http.get<Universe>("/api/universe");

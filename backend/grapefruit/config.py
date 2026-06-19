@@ -4,21 +4,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DATA_DIR = REPO_ROOT / "data"
-DATA_DIR.mkdir(exist_ok=True)
-NEWS_CACHE_DIR = DATA_DIR / "news_cache"
-NEWS_CACHE_DIR.mkdir(exist_ok=True)
-CATALYST_CACHE_DIR = DATA_DIR / "catalyst_cache"
-CATALYST_CACHE_DIR.mkdir(exist_ok=True)
-DUCKDB_PATH = DATA_DIR / "bars.duckdb"
-UNIVERSE_PATH = DATA_DIR / "universe.json"
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(REPO_ROOT / ".env"), extra="ignore")
 
+    # External APIs
     eodhd_api_key: str = ""
     perplexity_api_key: str = ""
+
+    # Supabase Postgres connection string (postgresql://...).
+    database_url: str = ""
+
+    # Comma-separated list of allowed CORS origins (Vercel URL + custom domain).
+    # Local dev origins are always allowed regardless of this value.
+    frontend_origin: str = ""
 
 
 settings = Settings()
