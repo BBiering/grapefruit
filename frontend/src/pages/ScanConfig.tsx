@@ -101,12 +101,18 @@ export default function ScanConfig() {
         </div>
       )}
       {keys && (
-        <div className="card" style={{ background: missingKey ? "#3a1f1f" : undefined }}>
+        <div
+          className="card"
+          style={{
+            background: s?.db_error ? "#3a1f1f" : missingKey ? "#3a1f1f" : undefined,
+          }}
+        >
           <h3>Status</h3>
           <div className="row" style={{ gap: "1rem", flexWrap: "wrap" }}>
             <span>
               Keys: eodhd {keys.eodhd ? "✓" : "✗"} · perplexity{" "}
-              {keys.perplexity ? "✓" : "✗"}
+              {keys.perplexity ? "✓" : "✗"} · database{" "}
+              {s?.database_url_set ? "✓" : "✗"}
             </span>
             <span className="muted">
               {s?.universe_symbols ?? 0} universe · {s?.bar_symbols ?? 0} with bars · {s?.hits ?? 0} hits ·{" "}
@@ -114,7 +120,15 @@ export default function ScanConfig() {
               {s?.assets_with_market_cap ?? 0} with market cap
             </span>
           </div>
-          {missingKey && (
+          {s?.db_error && (
+            <div style={{ marginTop: "0.5rem" }}>
+              <strong>Database error:</strong> <code>{s.db_error}</code>
+              <div className="muted" style={{ marginTop: "0.25rem" }}>
+                Check <code>DATABASE_URL</code> on Render (Supabase → Settings → Database → "Direct connection" URI; replace <code>[YOUR-PASSWORD]</code>).
+              </div>
+            </div>
+          )}
+          {missingKey && !s?.db_error && (
             <div className="muted" style={{ marginTop: "0.5rem" }}>
               Missing API key(s) on the backend. Set them on Render and redeploy.
             </div>
