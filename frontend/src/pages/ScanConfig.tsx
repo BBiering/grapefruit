@@ -74,27 +74,49 @@ export default function ScanConfig() {
   }, [activeJobId, qc]);
 
   const s = status.data;
-  const missingKey = s && (!s.keys.eodhd || !s.keys.perplexity);
+  const statusErr = status.error as Error | null;
+  const keys = s?.keys;
+  const missingKey = keys && (!keys.eodhd || !keys.perplexity);
+  const apiBase = import.meta.env.VITE_API_BASE_URL ?? "";
 
   return (
     <div>
-      {s && (
+      {(statusErr || (s && !keys)) && (
+        <div className="card" style={{ background: "#3a1f1f" }}>
+          <h3>Backend unreachable</h3>
+          <div>
+            Couldn't load <code>/api/status</code>
+            {apiBase ? <> from <code>{apiBase}</code></> : <> (no <code>VITE_API_BASE_URL</code> set, so requests went to this domain)</>}.
+          </div>
+          <div className="muted" style={{ marginTop: "0.5rem" }}>
+            Common causes: Render service sleeping (first request takes ~30s — refresh in a moment),
+            <code>FRONTEND_ORIGIN</code> on Render doesn't include this Vercel URL (CORS),
+            or <code>VITE_API_BASE_URL</code> wasn't set when Vercel built the bundle.
+          </div>
+          {statusErr && (
+            <div className="muted" style={{ marginTop: "0.5rem" }}>
+              Error: <code>{statusErr.message}</code>
+            </div>
+          )}
+        </div>
+      )}
+      {keys && (
         <div className="card" style={{ background: missingKey ? "#3a1f1f" : undefined }}>
           <h3>Status</h3>
           <div className="row" style={{ gap: "1rem", flexWrap: "wrap" }}>
             <span>
-              Keys: eodhd {s.keys.eodhd ? "✓" : "✗"} · perplexity{" "}
-              {s.keys.perplexity ? "✓" : "✗"}
+              Keys: eodhd {keys.eodhd ? "✓" : "✗"} · perplexity{" "}
+              {keys.perplexity ? "✓" : "✗"}
             </span>
             <span className="muted">
-              {s.universe_symbols} universe · {s.bar_symbols} with bars · {s.hits} hits ·{" "}
-              {s.assets_with_name}/{s.assets} assets named ·{" "}
-              {s.assets_with_market_cap} with market cap
+              {s?.universe_symbols ?? 0} universe · {s?.bar_symbols ?? 0} with bars · {s?.hits ?? 0} hits ·{" "}
+              {s?.assets_with_name ?? 0}/{s?.assets ?? 0} assets named ·{" "}
+              {s?.assets_with_market_cap ?? 0} with market cap
             </span>
           </div>
           {missingKey && (
             <div className="muted" style={{ marginTop: "0.5rem" }}>
-              Missing API key(s) in <code>.env</code>. Add them and restart the backend.
+              Missing API key(s) on the backend. Set them on Render and redeploy.
             </div>
           )}
         </div>
@@ -138,7 +160,7 @@ export default function ScanConfig() {
         <div className="row">
           <button
             onClick={() => refreshCapsMut.mutate()}
-            disabled={refreshCapsMut.isPending || !s?.keys.eodhd}
+            disabled={refreshCapsMut.isPending || !s?.keys?.eodhd}
           >
             Backfill market caps
           </button>
