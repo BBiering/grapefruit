@@ -281,8 +281,6 @@ def batch_catalysts(limit: int = 50) -> dict:
     job = new_job("catalyst_batch")
     job.total = len(pending)
 
-    from datetime import datetime, timezone
-
     from grapefruit.catalyst import explain_move
     from grapefruit.detector import find_spike
 
@@ -312,18 +310,6 @@ def batch_catalysts(limit: int = 50) -> dict:
                 spike=spike,
             )
             if not result.get("error"):
-                storage.upsert_catalyst(
-                    {
-                        "symbol": sym,
-                        "end_ts": end_ts,
-                        "headline": result.get("headline") or None,
-                        "summary": result.get("summary") or None,
-                        "spike_explanation": result.get("spike_explanation") or None,
-                        "was_foreseeable": result.get("was_foreseeable"),
-                        "foreseeable_evidence": result.get("foreseeable_evidence") or None,
-                        "fetched_at": datetime.now(timezone.utc),
-                    }
-                )
                 fetched += 1
             j.processed = idx
             j.message = f"{sym} {end_ts} ({idx}/{len(pending)})"

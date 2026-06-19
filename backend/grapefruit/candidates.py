@@ -4,7 +4,7 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 
-from grapefruit.storage import _use_db
+from grapefruit.storage import _cur
 
 
 @dataclass
@@ -27,19 +27,20 @@ def scan_candidates(p: CandidateParams, limit: int = 100) -> list[dict]:
     """
     today = date.today()
     cutoff = today - timedelta(days=400)
-    with _use_db() as con:
-        df = con.execute(
+    with _cur() as cur:
+        cur.execute(
             """
             SELECT symbol, ts, close, volume
             FROM bars
-            WHERE ts >= ?
+            WHERE ts >= %s
             ORDER BY symbol, ts
             """,
             [cutoff],
-        ).df()
-
-    if df.empty:
+        )
+        rows = cur.fetchall()
+    if not rows:
         return []
+    df = pd.DataFrame(rows, columns=["symbol", "ts", "close", "volume"])
 
     out: list[dict] = []
     for symbol, g in df.groupby("symbol", sort=False):

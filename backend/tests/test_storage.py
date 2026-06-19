@@ -1,25 +1,41 @@
+"""Postgres-backed storage tests.
+
+Skipped unless DATABASE_URL points at a throwaway Postgres / Supabase project.
+The tests destroy and recreate every table in the public schema, so DO NOT
+point this at a production DB.
+"""
+import os
 from datetime import date
 
 import pandas as pd
 import pytest
 
-from grapefruit import config, storage
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("DATABASE_URL"),
+    reason="requires DATABASE_URL pointing at a throwaway Postgres",
+)
 
 
 @pytest.fixture(autouse=True)
-def isolated_db(tmp_path, monkeypatch):
-    db_path = tmp_path / "test.duckdb"
-    monkeypatch.setattr(config, "DUCKDB_PATH", db_path)
-    monkeypatch.setattr(storage, "DUCKDB_PATH", db_path, raising=False)
-    monkeypatch.setattr(storage, "_conn", None)
+def fresh_schema(monkeypatch):
+    # Force a fresh pool with the test DATABASE_URL.
+    from grapefruit import config, storage
+
+    monkeypatch.setattr(config.settings, "database_url", os.environ["DATABASE_URL"])
+    monkeypatch.setattr(storage, "_pool", None)
     storage.init_db()
+    with storage._conn() as con:  # type: ignore[attr-defined]
+        with con.cursor() as cur:
+            cur.execute(
+                "TRUNCATE bars, hits, assets, catalysts, app_state, news_cache RESTART IDENTITY"
+            )
     yield
-    if storage._conn is not None:
-        storage._conn.close()
-        monkeypatch.setattr(storage, "_conn", None)
 
 
 def test_upsert_and_load_roundtrip():
+    from grapefruit import storage
+
     df = pd.DataFrame(
         [
             {"symbol": "AAA", "ts": date(2024, 1, 1), "open": 1.0, "high": 1.2, "low": 0.9, "close": 1.1, "volume": 100},
@@ -36,6 +52,8 @@ def test_upsert_and_load_roundtrip():
 
 
 def test_hits_save_and_query():
+    from grapefruit import storage
+
     rows = [
         {
             "symbol": "AAA",

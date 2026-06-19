@@ -1,23 +1,26 @@
 """Perplexity-backed catalyst explanations for big stock moves.
 
-For each hit we cache a single JSON blob covering:
+For each hit we cache:
 - the overall trough->peak catalyst,
-- the sharpest single-session jump inside the window (if any),
+- the sharpest single-session jump inside the window (recomputed per call),
 - whether that jump was foreseeable from public information beforehand,
 - and the pre-existing signal, if any.
+
+Persistence is in the `catalysts` Postgres table via grapefruit.storage. No
+disk caches.
 """
 from __future__ import annotations
 
 import json
 import logging
 import re
-from datetime import date, datetime, timezone
-
 import time
+from datetime import date, datetime, timezone
 
 import httpx
 
-from grapefruit.config import CATALYST_CACHE_DIR, settings
+from grapefruit import storage
+from grapefruit.config import settings
 from grapefruit.rate_limit import PERPLEXITY_BUCKET, redact
 
 
@@ -27,10 +30,6 @@ _PPLX_URL = "https://api.perplexity.ai/chat/completions"
 _MODEL = "sonar"
 _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
-
-
-def _cache_path(symbol: str, around: date):
-    return CATALYST_CACHE_DIR / f"{symbol}_{around.isoformat()}.json"
 
 
 def explain_move(
@@ -43,13 +42,11 @@ def explain_move(
     spike: dict | None = None,
     refresh: bool = False,
 ) -> dict:
-    """Return a structured catalyst report. Cached forever on disk per (symbol, around)."""
-    cache = _cache_path(symbol, around)
-    if cache.exists() and not refresh:
-        try:
-            return json.loads(cache.read_text())
-        except json.JSONDecodeError:
-            pass
+    """Return a structured catalyst report. Persisted in the `catalysts` table."""
+    if not refresh:
+        cached = storage.load_catalyst(symbol, around)
+        if cached:
+            return _hydrate_cached(cached, spike)
 
     base = {
         "headline": "",
@@ -144,10 +141,8 @@ def explain_move(
             "raw": raw,
         }
         if not result["summary"] and not parsed:
-            # Couldn't parse JSON; fall back to the raw text as the summary so the
-            # user still sees something useful.
             result["summary"] = raw
-        cache.write_text(json.dumps(result))
+        _persist(symbol, around, result)
         return result
     except httpx.HTTPStatusError as exc:
         body = ""
@@ -162,8 +157,37 @@ def explain_move(
         return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
 
 
+def _persist(symbol: str, around: date, result: dict) -> None:
+    storage.upsert_catalyst(
+        {
+            "symbol": symbol,
+            "end_ts": around,
+            "headline": result.get("headline") or None,
+            "summary": result.get("summary") or None,
+            "spike_explanation": result.get("spike_explanation") or None,
+            "was_foreseeable": result.get("was_foreseeable"),
+            "foreseeable_evidence": result.get("foreseeable_evidence") or None,
+            "fetched_at": datetime.now(timezone.utc),
+        }
+    )
+
+
+def _hydrate_cached(row: dict, spike: dict | None) -> dict:
+    fetched_at = row.get("fetched_at")
+    return {
+        "headline": row.get("headline") or "",
+        "summary": row.get("summary") or "",
+        "spike": spike,
+        "spike_explanation": row.get("spike_explanation") or "",
+        "was_foreseeable": row.get("was_foreseeable"),
+        "foreseeable_evidence": row.get("foreseeable_evidence") or "",
+        "raw": "",
+        "fetched_at": fetched_at.isoformat() if hasattr(fetched_at, "isoformat") else fetched_at,
+        "model": _MODEL,
+    }
+
+
 def _post_with_retry(headers: dict, payload: dict, symbol: str) -> httpx.Response | None:
-    """POST to Perplexity with rate-limiting and 429 retry. Returns the response or None."""
     for attempt in range(_MAX_RETRIES):
         PERPLEXITY_BUCKET.acquire()
         resp = httpx.post(_PPLX_URL, headers=headers, json=payload, timeout=45.0)
@@ -195,10 +219,8 @@ _BARE_JSON_RE = re.compile(r"\{.*\}", re.DOTALL)
 
 
 def _parse_json_response(text: str) -> dict:
-    """Pull a JSON object out of Perplexity's reply, robust to fences and prose."""
     if not text:
         return {}
-    # Try fenced ```json blocks first.
     m = _JSON_BLOCK_RE.search(text)
     candidate = m.group(1) if m else None
     if candidate is None:
