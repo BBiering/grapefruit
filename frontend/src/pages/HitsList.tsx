@@ -100,18 +100,18 @@ export default function HitsList() {
 
   const s = status.data;
   const showEnrichBanner = missingNames > 0 || (s && s.hit_symbols_missing_metadata > 0);
-  const canFetchCatalysts = !!s?.keys.perplexity;
+  const canFetchCatalysts = !!s?.keys?.perplexity;
 
   return (
     <div>
       {showEnrichBanner && (
         <div
           className="card"
-          style={{ background: s?.keys.eodhd ? "#1f2a3a" : "#3a1f1f" }}
+          style={{ background: s?.keys?.eodhd ? "#1f2a3a" : "#3a1f1f" }}
         >
           <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
             <span>
-              {s?.keys.eodhd ? (
+              {s?.keys?.eodhd ? (
                 <>
                   <strong>
                     {s?.hit_symbols_missing_metadata ?? missingNames} hit symbols
@@ -129,7 +129,7 @@ export default function HitsList() {
             </span>
             <button
               onClick={() => enrichMut.mutate()}
-              disabled={!s?.keys.eodhd || enrichMut.isPending}
+              disabled={!s?.keys?.eodhd || enrichMut.isPending}
             >
               {enrichMut.isPending ? "Starting…" : "Enrich now"}
             </button>
