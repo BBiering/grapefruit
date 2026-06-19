@@ -36,6 +36,8 @@ export interface AssetMeta {
 
 export interface AppStatus {
   keys: { eodhd: boolean; perplexity: boolean };
+  database_url_set: boolean;
+  frontend_origin: string | null;
   universe_symbols: number;
   universe_refreshed_at: string | null;
   bar_symbols: number;
@@ -45,6 +47,7 @@ export interface AppStatus {
   assets_with_market_cap: number;
   hit_symbols_missing_metadata: number;
   catalysts: number;
+  db_error: string | null;
 }
 
 export interface Spike {

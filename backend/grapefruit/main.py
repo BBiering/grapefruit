@@ -12,7 +12,7 @@ log = logging.getLogger(__name__)
 
 
 def _allowed_origins() -> list[str]:
-    extra = [o.strip() for o in settings.frontend_origin.split(",") if o.strip()]
+    extra = [o.strip().rstrip("/") for o in settings.frontend_origin.split(",") if o.strip()]
     return [
         "http://localhost:5173",
         "http://127.0.0.1:5173",
@@ -20,10 +20,16 @@ def _allowed_origins() -> list[str]:
     ]
 
 
+# Match every grapefruit-*.vercel.app deploy (production + preview branches)
+# so the user doesn't have to update FRONTEND_ORIGIN for each preview URL.
+_VERCEL_PREVIEW_RE = r"https://grapefruit(-[a-z0-9-]+)?\.vercel\.app"
+
+
 app = FastAPI(title="Grapefruit", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins(),
+    allow_origin_regex=_VERCEL_PREVIEW_RE,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -244,25 +244,45 @@ def get_hits(
 
 @router.get("/api/status")
 def get_status() -> dict:
-    storage.init_db()
-    c = storage.counts()
-    uni = load_universe()
-    pending_enrich = len(storage.hit_symbols_missing_metadata())
-    return {
+    """Health snapshot. Never raises - reports the DB error in the response."""
+    response: dict = {
         "keys": {
             "eodhd": bool(settings.eodhd_api_key),
             "perplexity": bool(settings.perplexity_api_key),
         },
-        "universe_symbols": uni["count"] if uni else 0,
-        "universe_refreshed_at": uni["refreshed_at"] if uni else None,
-        "bar_symbols": c["bar_symbols"],
-        "hits": c["hits"],
-        "assets": c["assets"],
-        "assets_with_name": c["assets_with_name"],
-        "assets_with_market_cap": c["assets_with_market_cap"],
-        "hit_symbols_missing_metadata": pending_enrich,
-        "catalysts": c["catalysts"],
+        "database_url_set": bool(settings.database_url),
+        "frontend_origin": settings.frontend_origin or None,
+        "universe_symbols": 0,
+        "universe_refreshed_at": None,
+        "bar_symbols": 0,
+        "hits": 0,
+        "assets": 0,
+        "assets_with_name": 0,
+        "assets_with_market_cap": 0,
+        "hit_symbols_missing_metadata": 0,
+        "catalysts": 0,
+        "db_error": None,
     }
+    try:
+        storage.init_db()
+        c = storage.counts()
+        uni = load_universe()
+        response.update(
+            {
+                "universe_symbols": uni["count"] if uni else 0,
+                "universe_refreshed_at": uni["refreshed_at"] if uni else None,
+                "bar_symbols": c["bar_symbols"],
+                "hits": c["hits"],
+                "assets": c["assets"],
+                "assets_with_name": c["assets_with_name"],
+                "assets_with_market_cap": c["assets_with_market_cap"],
+                "hit_symbols_missing_metadata": len(storage.hit_symbols_missing_metadata()),
+                "catalysts": c["catalysts"],
+            }
+        )
+    except Exception as exc:  # noqa: BLE001
+        response["db_error"] = f"{type(exc).__name__}: {exc}"
+    return response
 
 
 @router.get("/api/industries")
