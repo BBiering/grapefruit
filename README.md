@@ -26,7 +26,7 @@ pip install -e ".[dev]"
 uvicorn grapefruit.main:app --reload --port 8000 --app-dir backend
 ```
 
-`DATABASE_URL` is a Supabase Postgres connection string (Settings → Database → "Direct connection"). The backend creates all required tables idempotently at startup.
+`DATABASE_URL` is a Supabase Postgres connection string. Use the **Session pooler** URI from Supabase → Settings → Database → Connection string → Session pooler (port `5432`). Do **not** use "Direct connection" — it's IPv6-only and Render's free tier can't reach it. The backend creates all required tables idempotently at startup.
 
 ```bash
 # Frontend (separate terminal)
@@ -58,7 +58,7 @@ The detector has synthetic-series unit tests that don't touch the database. `tes
 
 Three pieces, all auto-deploying on `git push origin main`:
 
-1. **Supabase** — create a free Postgres project. Copy the "Direct connection" URI for `DATABASE_URL`. No schema setup needed; the backend creates tables on startup.
+1. **Supabase** — create a free Postgres project. Copy the **Session pooler** URI (Settings → Database → Connection string → Session pooler, port `5432`) for `DATABASE_URL`. **Do not use "Direct connection"** — it's IPv6-only and Render free tier can't reach it. No schema setup needed; the backend creates tables on startup.
 2. **Render** — import the included `render.yaml` Blueprint (Dashboard → Blueprints → New). Fill in the four `sync: false` env vars (`DATABASE_URL`, `EODHD_API_KEY`, `PERPLEXITY_API_KEY`, `FRONTEND_ORIGIN`). Render auto-deploys on every push to `main`.
 3. **Vercel** — import the repo. `vercel.json` configures the build (`frontend/`) and SPA rewrites. Set one env var: `VITE_API_BASE_URL` = your Render service URL (e.g. `https://grapefruit-api.onrender.com`).
 
