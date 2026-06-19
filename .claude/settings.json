@@ -1,0 +1,52 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install)",
+      "Bash(npm install:*)",
+      "Bash(npm ci)",
+      "Bash(npm run *)",
+      "Bash(npx tsc *)",
+      "Bash(npx vite *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(python -m pytest *)",
+      "Bash(python -m ruff *)",
+      "Bash(pytest *)",
+      "Bash(ruff *)",
+      "Bash(uv sync *)",
+      "Bash(uv run *)",
+      "Bash(uv pip *)",
+      "Bash(uv add *)",
+      "Bash(uv lock *)",
+      "Bash(pip install *)",
+      "Bash(git status)",
+      "Bash(git status:*)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git push *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git rebase *)",
+      "Bash(git branch *)",
+      "Bash(git stash *)",
+      "Bash(git remote -v)",
+      "Bash(git rev-parse *)",
+      "Bash(ls *)",
+      "Bash(wc *)",
+      "Bash(mkdir *)",
+      "Edit(**/*)",
+      "Write(**/*)"
+    ],
+    "deny": [
+      "Bash(rm -rf *)",
+      "Bash(git push --force *)",
+      "Bash(git push -f *)",
+      "Bash(git reset --hard *)"
+    ]
+  }
+}
