@@ -2,7 +2,7 @@ from datetime import date, timedelta
 
 import numpy as np
 
-from grapefruit.detector import detect_hits, find_spike
+from grapefruit.detector import detect_hits, detect_winners, find_spike
 
 
 def _dates(n: int):
@@ -121,3 +121,51 @@ def test_two_separate_rises_in_separate_runs_both_detected():
     assert len(hits) == 2
     assert all(h.multiplier >= 10.0 for h in hits)
     assert hits[0].end_ts < hits[1].start_ts
+
+
+# ---------- detect_winners (Part 1) ----------
+
+
+def _calendar_dates(n: int, start_day: int = 1):
+    """n consecutive *calendar* days, so post-peak windows of 30 days can be tested."""
+    start = date(2024, 1, start_day)
+    return np.array([start + timedelta(days=i) for i in range(n)])
+
+
+def test_detect_winners_clean_breakout_passes():
+    # 30 flat at $1, jumps 3-6-10 in 3 bars, holds at $10 for 30 days.
+    closes = np.concatenate([np.full(30, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 10.0)])
+    dates = _calendar_dates(len(closes))
+    winners = detect_winners("CLEAN", closes, dates)
+    assert len(winners) == 1
+    w = winners[0]
+    assert w.multiplier >= 5.0
+    assert w.status == "held"
+    assert w.breakout_ratio is not None and w.breakout_ratio >= 1.5
+    assert w.days_to_peak <= 7
+
+
+def test_detect_winners_crash_then_recover_fails_breakout():
+    # 30 at $10, crashes to $1 for 20, recovers to $10 -> peak < 1.5 x prior high.
+    closes = np.concatenate(
+        [np.full(30, 10.0), np.full(20, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 10.0)]
+    )
+    dates = _calendar_dates(len(closes))
+    winners = detect_winners("CRASH", closes, dates)
+    assert winners == []
+
+
+def test_detect_winners_faded_post_peak_is_dropped():
+    # Same jump but post-peak collapses back to $3 -> retention 0.30 < 0.70.
+    closes = np.concatenate([np.full(30, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 3.0)])
+    dates = _calendar_dates(len(closes))
+    winners = detect_winners("FADED", closes, dates)
+    assert winners == []
+
+
+def test_detect_winners_gradual_rise_fails_max_days():
+    # 1 -> 10 over 90 days; max_days=7 means no single 7-bar window achieves 5x.
+    closes = np.linspace(1.0, 10.0, 90)
+    dates = _calendar_dates(90)
+    winners = detect_winners("SLOW", closes, dates)
+    assert winners == []

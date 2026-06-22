@@ -181,3 +181,121 @@ def _to_date(value) -> date:
     if isinstance(value, np.datetime64):
         return value.astype("datetime64[D]").astype(date)
     return value.date() if hasattr(value, "date") else value
+
+
+@dataclass
+class Winner:
+    """A 'steep, sustained rise' event used by Part 1 of the redesign.
+
+    Definition: within a short window (`max_days` consecutive bars at most), price
+    rose by `min_multiplier`+. The post-peak retention rule confirms the new level
+    held (close at peak + N bars retained `post_peak_retention_min` of the peak).
+    The breakout rule rejects pure crash-then-recovery rebounds.
+    """
+    symbol: str
+    start_ts: date
+    end_ts: date
+    days_to_peak: int
+    trough_price: float
+    peak_price: float
+    multiplier: float
+    post_peak_retention: float | None
+    breakout_ratio: float | None
+    status: str  # 'held' | 'faded'
+
+
+def detect_winners(
+    symbol: str,
+    closes: np.ndarray,
+    dates: np.ndarray,
+    *,
+    min_multiplier: float = 5.0,
+    max_days: int = 7,
+    post_peak_retention_min: float = 0.70,
+    breakout_vs_prior_high_min: float = 1.5,
+    pre_trough_lookback_days: int = 180,
+    post_peak_lookback_days: int = 30,
+) -> list[Winner]:
+    """Find every (start, peak) where price rose >= `min_multiplier` in <= `max_days`
+    consecutive bars, the peak then held >= `post_peak_retention_min` for
+    `post_peak_lookback_days`, and the peak was >= `breakout_vs_prior_high_min` x
+    the max close in the `pre_trough_lookback_days` before the trough.
+
+    Greedy scan: for each bar i, look back up to `max_days` bars and check the
+    trough->i window. After accepting a window, skip past `i` so we don't double
+    count overlapping events for the same symbol.
+    """
+    n = len(closes)
+    if n < 2 or len(dates) != n:
+        return []
+    date_objs = np.array([_to_date(d) for d in dates])
+    winners: list[Winner] = []
+    i = 1
+    while i < n:
+        # Search the last `max_days` bars for the best trough->i ratio.
+        lo_search = max(0, i - max_days)
+        window = closes[lo_search : i + 1]
+        if window.max() != closes[i] or closes[i] <= 0:
+            i += 1
+            continue
+        trough_off = int(np.argmin(window))
+        trough_idx = lo_search + trough_off
+        if trough_idx >= i:
+            i += 1
+            continue
+        trough = float(closes[trough_idx])
+        peak = float(closes[i])
+        if trough <= 0 or peak / trough < min_multiplier:
+            i += 1
+            continue
+
+        # Breakout vs prior-high (180d before trough).
+        trough_date = date_objs[trough_idx]
+        cutoff = trough_date - timedelta(days=pre_trough_lookback_days)
+        pre_mask = (date_objs >= cutoff) & (date_objs < trough_date)
+        if pre_mask.any():
+            pre_high = float(closes[pre_mask].max())
+            breakout = peak / pre_high if pre_high > 0 else None
+        else:
+            pre_high = None  # newly listed - allow
+            breakout = None
+        if breakout is not None and breakout < breakout_vs_prior_high_min:
+            i += 1
+            continue
+
+        # Post-peak retention: look at the close `post_peak_lookback_days` calendar
+        # days after the peak. If we don't have that data yet, mark as 'held' only
+        # if the most recent close is still above the threshold.
+        peak_date = date_objs[i]
+        post_target = peak_date + timedelta(days=post_peak_lookback_days)
+        post_mask = (date_objs > peak_date) & (date_objs <= post_target)
+        if post_mask.any():
+            post_close = float(closes[post_mask][-1])
+        elif i + 1 < n:
+            post_close = float(closes[-1])  # use the latest available bar
+        else:
+            post_close = peak
+        retention = post_close / peak if peak > 0 else None
+        status = "held" if retention is not None and retention >= post_peak_retention_min else "faded"
+        # Filter out 'faded': we only report sustained moves per the spec.
+        if status != "held":
+            i += 1
+            continue
+
+        winners.append(
+            Winner(
+                symbol=symbol,
+                start_ts=trough_date,
+                end_ts=peak_date,
+                days_to_peak=int(i - trough_idx),
+                trough_price=trough,
+                peak_price=peak,
+                multiplier=peak / trough,
+                post_peak_retention=retention,
+                breakout_ratio=breakout,
+                status=status,
+            )
+        )
+        # Skip past this winner's peak to avoid double-counting overlapping windows.
+        i = i + post_peak_lookback_days + 1
+    return winners

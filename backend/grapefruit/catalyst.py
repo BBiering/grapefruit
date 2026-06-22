@@ -19,7 +19,6 @@ from datetime import date, datetime, timezone
 
 import httpx
 
-from grapefruit import storage
 from grapefruit.config import settings
 from grapefruit.rate_limit import PERPLEXITY_BUCKET, redact
 
@@ -42,11 +41,10 @@ def explain_move(
     spike: dict | None = None,
     refresh: bool = False,
 ) -> dict:
-    """Return a structured catalyst report. Persisted in the `catalysts` table."""
-    if not refresh:
-        cached = storage.load_catalyst(symbol, around)
-        if cached:
-            return _hydrate_cached(cached, spike)
+    """Return a structured catalyst report. Pure function — caller is responsible
+    for caching/persistence (e.g. into `winner_catalysts`). The `refresh` arg is
+    retained for API compatibility but ignored."""
+    del refresh  # caching is handled by callers now
 
     base = {
         "headline": "",
@@ -142,7 +140,6 @@ def explain_move(
         }
         if not result["summary"] and not parsed:
             result["summary"] = raw
-        _persist(symbol, around, result)
         return result
     except httpx.HTTPStatusError as exc:
         body = ""
@@ -155,36 +152,6 @@ def explain_move(
     except Exception as exc:  # noqa: BLE001
         log.warning("perplexity fetch failed for %s: %s", symbol, redact(str(exc)))
         return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
-
-
-def _persist(symbol: str, around: date, result: dict) -> None:
-    storage.upsert_catalyst(
-        {
-            "symbol": symbol,
-            "end_ts": around,
-            "headline": result.get("headline") or None,
-            "summary": result.get("summary") or None,
-            "spike_explanation": result.get("spike_explanation") or None,
-            "was_foreseeable": result.get("was_foreseeable"),
-            "foreseeable_evidence": result.get("foreseeable_evidence") or None,
-            "fetched_at": datetime.now(timezone.utc),
-        }
-    )
-
-
-def _hydrate_cached(row: dict, spike: dict | None) -> dict:
-    fetched_at = row.get("fetched_at")
-    return {
-        "headline": row.get("headline") or "",
-        "summary": row.get("summary") or "",
-        "spike": spike,
-        "spike_explanation": row.get("spike_explanation") or "",
-        "was_foreseeable": row.get("was_foreseeable"),
-        "foreseeable_evidence": row.get("foreseeable_evidence") or "",
-        "raw": "",
-        "fetched_at": fetched_at.isoformat() if hasattr(fetched_at, "isoformat") else fetched_at,
-        "model": _MODEL,
-    }
 
 
 def _post_with_retry(headers: dict, payload: dict, symbol: str) -> httpx.Response | None:

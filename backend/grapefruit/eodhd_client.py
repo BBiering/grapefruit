@@ -117,3 +117,20 @@ def fetch_news(symbol: str, start: date, end: date, limit: int = 50) -> list[dic
         },
     )
     return data if isinstance(data, list) else []
+
+
+def fetch_earnings_calendar(start: date, end: date, symbols: list[str] | None = None) -> list[dict]:
+    """Upcoming earnings dates in [start, end] for US tickers.
+
+    Optionally filter by `symbols`. Each item has at least:
+    `code` (symbol), `date`, `report_date`, `estimate`, `revenue_estimate`,
+    `actual`, `difference`, `percent`. EODHD's docs:
+    https://eodhd.com/financial-apis/calendar-upcoming-earnings-ipos-splits/
+    """
+    params = {"from": start.isoformat(), "to": end.isoformat()}
+    if symbols:
+        params["symbols"] = ",".join(f"{s}.US" for s in symbols)
+    data = _get("calendar/earnings", params)
+    if isinstance(data, dict):
+        return data.get("earnings", [])
+    return data if isinstance(data, list) else []
