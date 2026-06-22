@@ -1,50 +1,65 @@
 # 🍊 Grapefruit
 
-High-growth potential stock picker. A personal tool for studying historical US equity 10x moves and surfacing early-stage candidates that look similar today.
-
-Two modes:
-
-1. **Historical study** — scans the active US equity universe on EODHD for the last 5 years of daily bars, finds tickers that moved ≥ 10x inside a configurable rolling window (2–52 weeks), and surfaces raw news headlines around the peak so you can study the catalyst.
-2. **Current candidate scan** — runs a tunable momentum + volume heuristic against the latest cached bars to flag tickers showing early-stage signals today. Heuristic only. **Not financial advice.**
+Steep-rise stock detector. Scans the active US universe weekly for tickers that
+**rose at least 5x in under a week and held the new level**, then asks Perplexity
+why it happened and whether it was foreseeable from public information beforehand.
+A second view tracks small-cap candidates with upcoming earnings as potential
+future winners. **Not financial advice.**
 
 ## ⚠️ Survivorship bias
 
-EODHD's US symbol list is dominated by **currently active, tradable** tickers. Stocks that 10x-ed and then got delisted, acquired, or went bankrupt are largely absent. Treat every "hit" as filtered through survivorship — the universe is biased toward winners.
+EODHD's US symbol list is dominated by **currently active, tradable** tickers.
+Stocks that 10x-ed and then got delisted, acquired, or went bankrupt are largely
+absent. Treat every "winner" as filtered through survivorship.
 
-## Stack
+## Architecture
 
-- Backend: Python 3.11+, FastAPI, Postgres (Supabase), `httpx`, `psycopg`
-- Frontend: React + Vite + TypeScript, TanStack Query, Recharts
-- Data: EODHD (daily EOD bars, fundamentals, news), Perplexity `sonar` (catalyst summaries)
-- Deploy: Vercel (frontend) + Render (FastAPI) + Supabase (Postgres)
+```
+┌──────────────────┐                  ┌───────────────────────┐
+│  Vercel (SPA)    │  Supabase JS     │  Supabase Postgres    │
+│  one-pager       │  anon key + RLS  │  (single source of    │
+│  Past / Future   │ ───────────────► │   truth)              │
+└──────────────────┘                  └──────────▲────────────┘
+                                                 │
+                                                 │ psycopg
+                                       ┌─────────┴─────────┐
+                                       │ GCP Cloud Run Job │
+                                       │ scheduled weekly  │
+                                       │ + daily bars      │
+                                       └───────────────────┘
+                              EODHD · Perplexity APIs
+```
 
-## Setup
+- **Frontend** (`frontend/`) — React/Vite SPA hosted on Vercel. Reads Supabase
+  directly via `@supabase/supabase-js` with the anon key + Row Level Security.
+- **Backend** (`backend/grapefruit/`) — Python pipelines containerized and run as
+  GCP Cloud Run Jobs. Each pipeline reads/writes Supabase. No always-on web
+  server.
+- **Database** — Supabase Postgres. Schema in `supabase/migrations/0001_redesign.sql`.
+
+## Local dev
 
 ```bash
 cp .env.example .env          # fill EODHD_API_KEY, PERPLEXITY_API_KEY, DATABASE_URL
 pip install -e ".[dev]"
-uvicorn grapefruit.main:app --reload --port 8000 --app-dir backend
-```
 
-`DATABASE_URL` is a Supabase Postgres connection string. Use the **Session pooler** URI from Supabase → Settings → Database → Connection string → Session pooler (port `5432`). Do **not** use "Direct connection" — it's IPv6-only and Render's free tier can't reach it. The backend creates all required tables idempotently at startup.
+# Run a single pipeline locally against your Supabase project:
+python -m grapefruit.pipelines refresh_universe
+python -m grapefruit.pipelines refresh_fundamentals
+python -m grapefruit.pipelines refresh_bars
+python -m grapefruit.pipelines detect_winners
+python -m grapefruit.pipelines enrich_catalysts
+python -m grapefruit.pipelines refresh_watchlist
+python -m grapefruit.pipelines refresh_upcoming_events
+
+# Or run the full pipeline in order:
+python -m grapefruit.pipelines weekly
+```
 
 ```bash
-# Frontend (separate terminal)
-cd frontend
-npm install
-npm run dev                   # http://localhost:5173, proxies /api -> :8000
+cd frontend && npm install && npm run dev
+# http://localhost:5173, reads Supabase directly via VITE_SUPABASE_* env vars
 ```
-
-Get an EODHD API key at https://eodhd.com/.
-
-## Usage flow
-
-1. Open http://localhost:5173.
-2. **Refresh universe** — pulls the current active US equity asset list (~10k symbols).
-3. **Refresh bars** — pulls the last 5 years of daily bars into `data/bars.duckdb`. EODHD allows ~1000 req/min, so the full universe completes in minutes.
-4. **Run scan** — pick a window (weeks) and threshold (default 10x), then run. Watch progress.
-5. **Hits** table — click a row to see the price chart and news headlines around the peak.
-6. **Candidates** — tune momentum / volume thresholds against the current cache and review top-scoring tickers.
 
 ## Tests
 
@@ -52,18 +67,46 @@ Get an EODHD API key at https://eodhd.com/.
 pytest backend/tests
 ```
 
-The detector has synthetic-series unit tests that don't touch the database. `test_storage.py` is skipped unless `DATABASE_URL` is set; point it at a throwaway Supabase project to run those (note: each test truncates every table).
+The detector tests are pure-numpy and don't touch the database.
 
 ## Deploy
 
-Three pieces, all auto-deploying on `git push origin main`:
+### Supabase (one-time)
 
-1. **Supabase** — create a free Postgres project. Copy the **Session pooler** URI (Settings → Database → Connection string → Session pooler, port `5432`) for `DATABASE_URL`. **Do not use "Direct connection"** — it's IPv6-only and Render free tier can't reach it. No schema setup needed; the backend creates tables on startup.
-2. **Render** — import the included `render.yaml` Blueprint (Dashboard → Blueprints → New). Fill in the four `sync: false` env vars (`DATABASE_URL`, `EODHD_API_KEY`, `PERPLEXITY_API_KEY`, `FRONTEND_ORIGIN`). Render auto-deploys on every push to `main`.
-3. **Vercel** — import the repo. `vercel.json` configures the build (`frontend/`) and SPA rewrites. Set one env var: `VITE_API_BASE_URL` = your Render service URL (e.g. `https://grapefruit-api.onrender.com`).
+1. Create a Supabase project.
+2. SQL editor → paste and run `supabase/migrations/0001_redesign.sql`.
+3. Copy the **Session pooler** URI for `DATABASE_URL` and the project URL +
+   anon key for the frontend.
 
-Then put the Vercel URL into Render's `FRONTEND_ORIGIN` so CORS allows the deployed frontend.
+### Vercel (one-time)
 
-### Render free-tier caveat
+1. Import the repo. `vercel.json` builds `frontend/` and serves the SPA.
+2. Set env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+3. Push to `main` to redeploy.
 
-Free Web Services sleep after 15 minutes of HTTP idleness; the first request after a sleep costs ~30s cold start. The ProgressBar polls `/api/jobs/{id}` every 1s while a job is in flight, which keeps the service warm for the duration. For long jobs (hours-long full-universe scans), keep the browser tab open.
+### GCP Cloud Run Jobs (one-time)
+
+Follow `cloud/README.md` for the `gcloud` bootstrap commands. After that, the
+GitHub Actions workflow `.github/workflows/deploy-jobs.yml` builds the Docker
+image and updates every Cloud Run Job on each push to `main`.
+
+GitHub Actions secrets required:
+
+- `GCP_PROJECT_ID`
+- `GCP_REGION`
+- `GCP_SA_KEY` (JSON service account key with Run/Artifact Registry/Scheduler permissions)
+- `GCP_ARTIFACT_REPO`
+
+Cloud Run Job env vars (set in GCP, not in GitHub):
+
+- `EODHD_API_KEY`
+- `PERPLEXITY_API_KEY`
+- `DATABASE_URL`
+
+### Schedule
+
+- **Monday 09:00 UTC**: full pipeline via the `weekly` job (refresh universe →
+  fundamentals → bars → detect winners → enrich catalysts → refresh watchlist
+  → refresh upcoming events).
+- **Daily 22:00 UTC**: `refresh_bars` (incremental) so the dashboard sees today's
+  close by tomorrow morning.

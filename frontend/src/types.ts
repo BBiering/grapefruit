@@ -1,117 +1,40 @@
-export interface Hit {
+export interface Winner {
+  id: number;
   symbol: string;
-  window_days: number;
-  threshold: number;
   start_ts: string;
   end_ts: string;
+  days_to_peak: number;
   trough_price: number;
   peak_price: number;
   multiplier: number;
-  scanned_at: string | null;
-  name: string | null;
-  exchange: string | null;
-  sector: string | null;
-  industry: string | null;
-  market_cap_usd: number | null;
-  current_price: number | null;
-  last_ts: string | null;
-  days_since_peak: number | null;
-  peak_retention: number | null;
-  pre_high: number | null;
+  post_peak_retention: number | null;
   breakout_ratio: number | null;
-  headline: string | null;
-  catalyst_summary: string | null;
-  was_foreseeable: boolean | null;
-}
-
-export interface AssetMeta {
-  symbol: string;
-  name: string | null;
-  exchange: string | null;
+  market_cap_usd_at_peak: number | null;
   sector: string | null;
   industry: string | null;
-  market_cap_usd: number | null;
-  refreshed_at: string | null;
-}
-
-export interface AppStatus {
-  keys: { eodhd: boolean; perplexity: boolean };
-  database_url_set: boolean;
-  frontend_origin: string | null;
-  universe_symbols: number;
-  universe_refreshed_at: string | null;
-  bar_symbols: number;
-  hits: number;
-  assets: number;
-  assets_with_name: number;
-  assets_with_market_cap: number;
-  hit_symbols_missing_metadata: number;
-  catalysts: number;
-  db_error: string | null;
-}
-
-export interface Spike {
-  date: string;
-  prior_date: string;
-  prior_close: number;
-  close: number;
-  single_day_multiplier: number;
-}
-
-export interface Catalyst {
-  summary: string;
-  spike: Spike | null;
-  spike_explanation: string;
+  status: "held" | "faded";
+  detected_at: string;
+  // joined from assets
+  name: string | null;
+  // joined from winner_catalysts
+  headline: string | null;
+  summary: string | null;
   was_foreseeable: boolean | null;
-  foreseeable_evidence: string;
-  raw: string;
-  fetched_at: string;
-  model: string;
-  error?: string;
+  foreseeable_evidence: string | null;
 }
 
-export interface Bar {
-  ts: string;
-  open: number;
-  high: number;
-  low: number;
-  close: number;
-  volume: number;
-}
-
-export interface Article {
-  ts: string | null;
-  headline: string;
-  summary: string;
-  url: string;
-  source: string;
-}
-
-export interface Candidate {
+export interface WatchlistRow {
   symbol: string;
-  close: number;
-  gain: number;
-  vol_ratio: number;
-  sma50: number;
-  sma200: number;
-  score: number;
-  as_of: string;
-}
-
-export interface Job {
-  job_id: string;
-  kind: string;
-  status: "pending" | "running" | "done" | "error";
-  processed: number;
-  total: number;
-  message: string;
-  result: unknown;
-  error: string | null;
-  created_at: string;
-}
-
-export interface Universe {
-  symbols: string[];
-  count: number;
-  refreshed_at: string | null;
+  last_close: number | null;
+  market_cap_usd: number | null;
+  sector: string | null;
+  industry: string | null;
+  why_listed: string;
+  added_at: string;
+  // joined from assets
+  name: string | null;
+  // joined from upcoming_events (nearest)
+  next_event_ts: string | null;
+  next_event_type: string | null;
+  next_event_title: string | null;
 }

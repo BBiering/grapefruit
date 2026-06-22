@@ -54,6 +54,8 @@ def _cur(row_factory=None):
 
 
 def init_db() -> None:
+    """Idempotent DDL. The canonical schema also lives in supabase/migrations/0001_redesign.sql;
+    this keeps local dev usable without needing to run the migration by hand."""
     with _cur() as cur:
         cur.execute(
             """
@@ -66,21 +68,6 @@ def init_db() -> None:
                 close DOUBLE PRECISION,
                 volume BIGINT,
                 PRIMARY KEY (symbol, ts)
-            )
-            """
-        )
-        cur.execute(
-            """
-            CREATE TABLE IF NOT EXISTS hits (
-                symbol TEXT NOT NULL,
-                window_days INTEGER NOT NULL,
-                threshold DOUBLE PRECISION NOT NULL,
-                start_ts DATE NOT NULL,
-                end_ts DATE NOT NULL,
-                trough_price DOUBLE PRECISION,
-                peak_price DOUBLE PRECISION,
-                multiplier DOUBLE PRECISION,
-                scanned_at TIMESTAMPTZ
             )
             """
         )
@@ -100,21 +87,6 @@ def init_db() -> None:
         cur.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS market_cap_usd DOUBLE PRECISION")
         cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS catalysts (
-                symbol TEXT NOT NULL,
-                end_ts DATE NOT NULL,
-                headline TEXT,
-                summary TEXT,
-                spike_explanation TEXT,
-                was_foreseeable BOOLEAN,
-                foreseeable_evidence TEXT,
-                fetched_at TIMESTAMPTZ,
-                PRIMARY KEY (symbol, end_ts)
-            )
-            """
-        )
-        cur.execute(
-            """
             CREATE TABLE IF NOT EXISTS app_state (
                 key TEXT PRIMARY KEY,
                 value JSONB NOT NULL,
@@ -124,19 +96,89 @@ def init_db() -> None:
         )
         cur.execute(
             """
-            CREATE TABLE IF NOT EXISTS news_cache (
+            CREATE TABLE IF NOT EXISTS winners (
+                id BIGSERIAL PRIMARY KEY,
                 symbol TEXT NOT NULL,
-                around DATE NOT NULL,
-                days INTEGER NOT NULL,
-                articles JSONB NOT NULL,
-                fetched_at TIMESTAMPTZ NOT NULL,
-                PRIMARY KEY (symbol, around, days)
+                start_ts DATE NOT NULL,
+                end_ts DATE NOT NULL,
+                days_to_peak INTEGER NOT NULL,
+                trough_price DOUBLE PRECISION NOT NULL,
+                peak_price DOUBLE PRECISION NOT NULL,
+                multiplier DOUBLE PRECISION NOT NULL,
+                post_peak_retention DOUBLE PRECISION,
+                breakout_ratio DOUBLE PRECISION,
+                market_cap_usd_at_peak DOUBLE PRECISION,
+                sector TEXT,
+                industry TEXT,
+                status TEXT NOT NULL CHECK (status IN ('held', 'faded')),
+                detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (symbol, end_ts)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS winner_catalysts (
+                winner_id BIGINT PRIMARY KEY REFERENCES winners(id) ON DELETE CASCADE,
+                headline TEXT,
+                summary TEXT,
+                spike_explanation TEXT,
+                was_foreseeable BOOLEAN,
+                foreseeable_evidence TEXT,
+                perplexity_citations JSONB,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS watchlist (
+                symbol TEXT PRIMARY KEY,
+                last_close DOUBLE PRECISION,
+                market_cap_usd DOUBLE PRECISION,
+                sector TEXT,
+                industry TEXT,
+                why_listed TEXT NOT NULL,
+                added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS upcoming_events (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                event_ts DATE NOT NULL,
+                event_type TEXT NOT NULL CHECK (event_type IN ('earnings', 'trial_phase3', 'other')),
+                title TEXT,
+                source TEXT,
+                source_url TEXT,
+                est_revenue DOUBLE PRECISION,
+                est_eps DOUBLE PRECISION,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (symbol, event_ts, event_type, title)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pipeline_runs (
+                id BIGSERIAL PRIMARY KEY,
+                job_name TEXT NOT NULL,
+                started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                finished_at TIMESTAMPTZ,
+                status TEXT NOT NULL CHECK (status IN ('running', 'done', 'error')),
+                rows_processed INTEGER,
+                error_msg TEXT
             )
             """
         )
         cur.execute("CREATE INDEX IF NOT EXISTS bars_symbol_idx ON bars(symbol)")
-        cur.execute("CREATE INDEX IF NOT EXISTS hits_window_idx ON hits(window_days)")
-        cur.execute("CREATE INDEX IF NOT EXISTS catalysts_symbol_idx ON catalysts(symbol)")
+        cur.execute("CREATE INDEX IF NOT EXISTS winners_detected_idx ON winners(detected_at DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS winners_status_idx ON winners(status)")
+        cur.execute("CREATE INDEX IF NOT EXISTS upcoming_events_symbol_idx ON upcoming_events(symbol)")
+        cur.execute("CREATE INDEX IF NOT EXISTS upcoming_events_ts_idx ON upcoming_events(event_ts)")
+        cur.execute("CREATE INDEX IF NOT EXISTS pipeline_runs_job_idx ON pipeline_runs(job_name, started_at DESC)")
 
 
 # ---------------------------------------------------------------------------
@@ -192,142 +234,6 @@ def symbols_with_bars() -> list[str]:
     with _cur() as cur:
         cur.execute("SELECT DISTINCT symbol FROM bars ORDER BY symbol")
         return [r[0] for r in cur.fetchall()]
-
-
-# ---------------------------------------------------------------------------
-# hits
-# ---------------------------------------------------------------------------
-
-def hit_symbols_missing_metadata() -> list[str]:
-    with _cur() as cur:
-        cur.execute(
-            """
-            SELECT DISTINCT h.symbol
-            FROM hits h
-            LEFT JOIN assets a ON a.symbol = h.symbol
-            WHERE a.name IS NULL OR a.name = ''
-            ORDER BY h.symbol
-            """
-        )
-        return [r[0] for r in cur.fetchall()]
-
-
-def save_hits(rows: list[dict], window_days: int, threshold: float) -> None:
-    if not rows:
-        return
-    scanned_at = datetime.now(timezone.utc)
-    payload = [
-        (
-            r["symbol"],
-            window_days,
-            threshold,
-            r["start_ts"],
-            r["end_ts"],
-            r["trough_price"],
-            r["peak_price"],
-            r["multiplier"],
-            scanned_at,
-        )
-        for r in rows
-    ]
-    with _conn() as con:
-        with con.cursor() as cur:
-            cur.execute(
-                "DELETE FROM hits WHERE window_days = %s AND threshold = %s",
-                [window_days, threshold],
-            )
-            cur.executemany(
-                """
-                INSERT INTO hits
-                    (symbol, window_days, threshold, start_ts, end_ts,
-                     trough_price, peak_price, multiplier, scanned_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """,
-                payload,
-            )
-
-
-PRE_TROUGH_LOOKBACK_DAYS = 180
-
-
-def query_hits(
-    window_weeks: int | None = None,
-    min_multiplier: float | None = None,
-    max_days_since_peak: int | None = None,
-    min_peak_retention: float | None = None,
-    min_breakout_ratio: float | None = None,
-    industry: str | None = None,
-    pre_trough_lookback_days: int = PRE_TROUGH_LOOKBACK_DAYS,
-) -> list[dict]:
-    q = """
-        WITH latest AS (
-            SELECT b.symbol, b.close AS current_price, b.ts AS last_ts
-            FROM bars b
-            JOIN (
-                SELECT symbol, MAX(ts) AS mx FROM bars GROUP BY symbol
-            ) m ON m.symbol = b.symbol AND m.mx = b.ts
-        ),
-        pre_trough AS (
-            SELECT h.symbol, h.start_ts, h.end_ts, MAX(b.close) AS pre_high
-            FROM hits h
-            LEFT JOIN bars b
-              ON b.symbol = h.symbol
-             AND b.ts < h.start_ts
-             AND b.ts >= h.start_ts - (%s::int * INTERVAL '1 day')
-            GROUP BY h.symbol, h.start_ts, h.end_ts
-        )
-        SELECT
-            h.symbol, h.window_days, h.threshold,
-            h.start_ts, h.end_ts,
-            h.trough_price, h.peak_price, h.multiplier, h.scanned_at,
-            a.name, a.exchange, a.sector, a.industry, a.market_cap_usd,
-            l.current_price, l.last_ts,
-            CASE WHEN l.last_ts IS NULL THEN NULL
-                 ELSE (l.last_ts - h.end_ts)::int
-            END AS days_since_peak,
-            CASE WHEN h.peak_price > 0 AND l.current_price IS NOT NULL
-                 THEN l.current_price / h.peak_price
-                 ELSE NULL
-            END AS peak_retention,
-            p.pre_high,
-            CASE WHEN p.pre_high IS NULL OR p.pre_high <= 0 THEN NULL
-                 ELSE h.peak_price / p.pre_high
-            END AS breakout_ratio,
-            c.headline, c.summary AS catalyst_summary, c.was_foreseeable
-        FROM hits h
-        LEFT JOIN assets a ON a.symbol = h.symbol
-        LEFT JOIN latest l ON l.symbol = h.symbol
-        LEFT JOIN pre_trough p
-          ON p.symbol = h.symbol AND p.start_ts = h.start_ts AND p.end_ts = h.end_ts
-        LEFT JOIN catalysts c ON c.symbol = h.symbol AND c.end_ts = h.end_ts
-        WHERE 1=1
-    """
-    params: list[Any] = [pre_trough_lookback_days]
-    if window_weeks is not None:
-        q += " AND h.window_days = %s"
-        params.append(window_weeks * 5)
-    if min_multiplier is not None:
-        q += " AND h.multiplier >= %s"
-        params.append(min_multiplier)
-    if max_days_since_peak is not None:
-        q += " AND (l.last_ts - h.end_ts)::int <= %s"
-        params.append(max_days_since_peak)
-    if min_peak_retention is not None:
-        q += " AND (h.peak_price > 0 AND l.current_price / h.peak_price >= %s)"
-        params.append(min_peak_retention)
-    if min_breakout_ratio is not None:
-        q += (
-            " AND (p.pre_high IS NULL OR p.pre_high <= 0"
-            "      OR h.peak_price / p.pre_high >= %s)"
-        )
-        params.append(min_breakout_ratio)
-    if industry is not None:
-        q += " AND a.industry = %s"
-        params.append(industry)
-    q += " ORDER BY h.multiplier DESC"
-    with _cur(row_factory=dict_row) as cur:
-        cur.execute(q, params)
-        return [dict(r) for r in cur.fetchall()]
 
 
 # ---------------------------------------------------------------------------
@@ -414,87 +320,6 @@ def symbols_with_last_close_below(price_usd: float) -> list[str]:
 
 
 # ---------------------------------------------------------------------------
-# catalysts
-# ---------------------------------------------------------------------------
-
-_CATALYST_COLS = (
-    "symbol",
-    "end_ts",
-    "headline",
-    "summary",
-    "spike_explanation",
-    "was_foreseeable",
-    "foreseeable_evidence",
-    "fetched_at",
-)
-
-
-def upsert_catalyst(row: dict) -> None:
-    payload = tuple(row.get(col) for col in _CATALYST_COLS)
-    with _cur() as cur:
-        cur.execute(
-            """
-            INSERT INTO catalysts
-                (symbol, end_ts, headline, summary, spike_explanation,
-                 was_foreseeable, foreseeable_evidence, fetched_at)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            ON CONFLICT (symbol, end_ts) DO UPDATE SET
-                headline = EXCLUDED.headline,
-                summary = EXCLUDED.summary,
-                spike_explanation = EXCLUDED.spike_explanation,
-                was_foreseeable = EXCLUDED.was_foreseeable,
-                foreseeable_evidence = EXCLUDED.foreseeable_evidence,
-                fetched_at = EXCLUDED.fetched_at
-            """,
-            payload,
-        )
-
-
-def load_catalyst(symbol: str, end_ts: date) -> dict | None:
-    with _cur(row_factory=dict_row) as cur:
-        cur.execute(
-            """
-            SELECT symbol, end_ts, headline, summary, spike_explanation,
-                   was_foreseeable, foreseeable_evidence, fetched_at
-            FROM catalysts WHERE symbol = %s AND end_ts = %s
-            """,
-            [symbol, end_ts],
-        )
-        row = cur.fetchone()
-        return dict(row) if row else None
-
-
-def hits_without_catalyst(limit: int | None = None) -> list[dict]:
-    q = """
-        SELECT h.symbol, h.start_ts, h.end_ts, h.trough_price, h.peak_price, h.multiplier
-        FROM hits h
-        LEFT JOIN catalysts c ON c.symbol = h.symbol AND c.end_ts = h.end_ts
-        WHERE c.symbol IS NULL
-        ORDER BY h.multiplier DESC
-    """
-    params: list[Any] = []
-    if limit:
-        q += " LIMIT %s"
-        params.append(limit)
-    with _cur(row_factory=dict_row) as cur:
-        cur.execute(q, params)
-        return [dict(r) for r in cur.fetchall()]
-
-
-def list_hit_industries() -> list[str]:
-    with _cur() as cur:
-        cur.execute(
-            """
-            SELECT DISTINCT a.industry
-            FROM hits h JOIN assets a ON a.symbol = h.symbol
-            WHERE a.industry IS NOT NULL AND a.industry != ''
-            ORDER BY a.industry
-            """
-        )
-        return [r[0] for r in cur.fetchall()]
-
-
-# ---------------------------------------------------------------------------
 # misc state (replaces data/universe.json)
 # ---------------------------------------------------------------------------
 
@@ -520,34 +345,6 @@ def get_app_state(key: str) -> dict | None:
 
 
 # ---------------------------------------------------------------------------
-# news cache (replaces data/news_cache/*.json)
-# ---------------------------------------------------------------------------
-
-def load_news(symbol: str, around: date, days: int) -> list[dict] | None:
-    with _cur() as cur:
-        cur.execute(
-            "SELECT articles FROM news_cache WHERE symbol = %s AND around = %s AND days = %s",
-            [symbol, around, days],
-        )
-        row = cur.fetchone()
-        return row[0] if row else None
-
-
-def upsert_news(symbol: str, around: date, days: int, articles: list[dict]) -> None:
-    with _cur() as cur:
-        cur.execute(
-            """
-            INSERT INTO news_cache (symbol, around, days, articles, fetched_at)
-            VALUES (%s, %s, %s, %s::jsonb, %s)
-            ON CONFLICT (symbol, around, days) DO UPDATE SET
-                articles = EXCLUDED.articles,
-                fetched_at = EXCLUDED.fetched_at
-            """,
-            [symbol, around, days, json.dumps(articles), datetime.now(timezone.utc)],
-        )
-
-
-# ---------------------------------------------------------------------------
 # status
 # ---------------------------------------------------------------------------
 
@@ -555,21 +352,250 @@ def counts() -> dict:
     with _cur() as cur:
         cur.execute("SELECT COUNT(DISTINCT symbol) FROM bars")
         bar_symbols = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM hits")
-        hits = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM assets")
         assets = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM assets WHERE name IS NOT NULL AND name != ''")
         assets_with_name = cur.fetchone()[0]
         cur.execute("SELECT COUNT(*) FROM assets WHERE market_cap_usd IS NOT NULL")
         assets_with_market_cap = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM catalysts")
-        catalysts = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM winners")
+        winners = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM winner_catalysts")
+        winner_catalysts = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM watchlist")
+        watchlist = cur.fetchone()[0]
         return {
             "bar_symbols": bar_symbols,
-            "hits": hits,
             "assets": assets,
             "assets_with_name": assets_with_name,
             "assets_with_market_cap": assets_with_market_cap,
-            "catalysts": catalysts,
+            "winners": winners,
+            "winner_catalysts": winner_catalysts,
+            "watchlist": watchlist,
         }
+
+
+# ---------------------------------------------------------------------------
+# winners + winner_catalysts (Part 1 outputs)
+# ---------------------------------------------------------------------------
+
+def upsert_winner(row: dict) -> int:
+    """Insert/update a detected steep-rise event and return its id."""
+    cols = (
+        "symbol", "start_ts", "end_ts", "days_to_peak",
+        "trough_price", "peak_price", "multiplier",
+        "post_peak_retention", "breakout_ratio",
+        "market_cap_usd_at_peak", "sector", "industry", "status",
+    )
+    payload = tuple(row.get(c) for c in cols)
+    with _cur() as cur:
+        cur.execute(
+            """
+            INSERT INTO winners
+                (symbol, start_ts, end_ts, days_to_peak,
+                 trough_price, peak_price, multiplier,
+                 post_peak_retention, breakout_ratio,
+                 market_cap_usd_at_peak, sector, industry, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, end_ts) DO UPDATE SET
+                start_ts = EXCLUDED.start_ts,
+                days_to_peak = EXCLUDED.days_to_peak,
+                trough_price = EXCLUDED.trough_price,
+                peak_price = EXCLUDED.peak_price,
+                multiplier = EXCLUDED.multiplier,
+                post_peak_retention = EXCLUDED.post_peak_retention,
+                breakout_ratio = EXCLUDED.breakout_ratio,
+                market_cap_usd_at_peak = EXCLUDED.market_cap_usd_at_peak,
+                sector = EXCLUDED.sector,
+                industry = EXCLUDED.industry,
+                status = EXCLUDED.status,
+                detected_at = NOW()
+            RETURNING id
+            """,
+            payload,
+        )
+        return cur.fetchone()[0]
+
+
+def upsert_winner_catalyst(row: dict) -> None:
+    cols = (
+        "winner_id", "headline", "summary", "spike_explanation",
+        "was_foreseeable", "foreseeable_evidence", "perplexity_citations",
+    )
+    payload = list(row.get(c) for c in cols)
+    # Serialize JSONB
+    if payload[-1] is not None and not isinstance(payload[-1], str):
+        payload[-1] = json.dumps(payload[-1])
+    with _cur() as cur:
+        cur.execute(
+            """
+            INSERT INTO winner_catalysts
+                (winner_id, headline, summary, spike_explanation,
+                 was_foreseeable, foreseeable_evidence, perplexity_citations,
+                 fetched_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s::jsonb, NOW())
+            ON CONFLICT (winner_id) DO UPDATE SET
+                headline = EXCLUDED.headline,
+                summary = EXCLUDED.summary,
+                spike_explanation = EXCLUDED.spike_explanation,
+                was_foreseeable = EXCLUDED.was_foreseeable,
+                foreseeable_evidence = EXCLUDED.foreseeable_evidence,
+                perplexity_citations = EXCLUDED.perplexity_citations,
+                fetched_at = NOW()
+            """,
+            payload,
+        )
+
+
+def winners_without_catalyst(limit: int | None = None) -> list[dict]:
+    q = """
+        SELECT w.id, w.symbol, w.start_ts, w.end_ts,
+               w.trough_price, w.peak_price, w.multiplier,
+               a.name
+        FROM winners w
+        LEFT JOIN winner_catalysts c ON c.winner_id = w.id
+        LEFT JOIN assets a ON a.symbol = w.symbol
+        WHERE c.winner_id IS NULL
+        ORDER BY w.multiplier DESC
+    """
+    params: list = []
+    if limit:
+        q += " LIMIT %s"
+        params.append(limit)
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(q, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# watchlist (Part 2 candidates)
+# ---------------------------------------------------------------------------
+
+def upsert_watchlist_rows(rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    cols = ("symbol", "last_close", "market_cap_usd", "sector", "industry", "why_listed")
+    payload = [tuple(r.get(c) for c in cols) for r in rows]
+    with _cur() as cur:
+        cur.executemany(
+            """
+            INSERT INTO watchlist
+                (symbol, last_close, market_cap_usd, sector, industry, why_listed)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol) DO UPDATE SET
+                last_close = EXCLUDED.last_close,
+                market_cap_usd = EXCLUDED.market_cap_usd,
+                sector = EXCLUDED.sector,
+                industry = EXCLUDED.industry,
+                why_listed = EXCLUDED.why_listed,
+                added_at = NOW()
+            """,
+            payload,
+        )
+    return len(payload)
+
+
+def replace_watchlist(rows: list[dict]) -> int:
+    """Atomically replace the entire watchlist with `rows`."""
+    cols = ("symbol", "last_close", "market_cap_usd", "sector", "industry", "why_listed")
+    payload = [tuple(r.get(c) for c in cols) for r in rows]
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.execute("DELETE FROM watchlist")
+            if payload:
+                cur.executemany(
+                    """
+                    INSERT INTO watchlist
+                        (symbol, last_close, market_cap_usd, sector, industry, why_listed)
+                    VALUES (%s, %s, %s, %s, %s, %s)
+                    """,
+                    payload,
+                )
+    return len(payload)
+
+
+# ---------------------------------------------------------------------------
+# upcoming_events (Part 2 forward-looking)
+# ---------------------------------------------------------------------------
+
+def upsert_upcoming_events(rows: list[dict]) -> int:
+    if not rows:
+        return 0
+    cols = (
+        "symbol", "event_ts", "event_type", "title",
+        "source", "source_url", "est_revenue", "est_eps",
+    )
+    payload = [tuple(r.get(c) for c in cols) for r in rows]
+    with _cur() as cur:
+        cur.executemany(
+            """
+            INSERT INTO upcoming_events
+                (symbol, event_ts, event_type, title, source, source_url, est_revenue, est_eps)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (symbol, event_ts, event_type, title) DO UPDATE SET
+                source = EXCLUDED.source,
+                source_url = EXCLUDED.source_url,
+                est_revenue = EXCLUDED.est_revenue,
+                est_eps = EXCLUDED.est_eps,
+                fetched_at = NOW()
+            """,
+            payload,
+        )
+    return len(payload)
+
+
+# ---------------------------------------------------------------------------
+# pipeline_runs (observability)
+# ---------------------------------------------------------------------------
+
+def start_pipeline_run(job_name: str) -> int:
+    with _cur() as cur:
+        cur.execute(
+            "INSERT INTO pipeline_runs (job_name, status) VALUES (%s, 'running') RETURNING id",
+            [job_name],
+        )
+        return cur.fetchone()[0]
+
+
+def finish_pipeline_run(run_id: int, *, rows_processed: int | None = None,
+                        error: str | None = None) -> None:
+    status = "error" if error else "done"
+    with _cur() as cur:
+        cur.execute(
+            """
+            UPDATE pipeline_runs
+            SET finished_at = NOW(), status = %s, rows_processed = %s, error_msg = %s
+            WHERE id = %s
+            """,
+            [status, rows_processed, error, run_id],
+        )
+
+
+# ---------------------------------------------------------------------------
+# Helpers used by the pipeline orchestration
+# ---------------------------------------------------------------------------
+
+def latest_bar_date(symbol: str) -> date | None:
+    """Most recent bar date for a symbol, or None if the symbol has no bars yet."""
+    return last_ts(symbol)
+
+
+def symbols_in_assets() -> list[str]:
+    with _cur() as cur:
+        cur.execute("SELECT symbol FROM assets ORDER BY symbol")
+        return [r[0] for r in cur.fetchall()]
+
+
+def assets_needing_fundamentals(stale_after_days: int = 7) -> list[str]:
+    """Symbols whose `assets.refreshed_at` is older than `stale_after_days` (or null)."""
+    with _cur() as cur:
+        cur.execute(
+            """
+            SELECT symbol FROM assets
+            WHERE refreshed_at IS NULL
+               OR refreshed_at < NOW() - (%s::int * INTERVAL '1 day')
+            ORDER BY symbol
+            """,
+            [stale_after_days],
+        )
+        return [r[0] for r in cur.fetchall()]
