@@ -58,7 +58,8 @@ python -m grapefruit.pipelines weekly
 
 ```bash
 cd frontend && npm install && npm run dev
-# http://localhost:5173, reads Supabase directly via VITE_SUPABASE_* env vars
+# http://localhost:5173, reads Supabase directly via VITE_SUPABASE_URL +
+# VITE_SUPABASE_PUBLISHABLE_KEY env vars (set them in frontend/.env.local)
 ```
 
 ## Tests
@@ -81,27 +82,35 @@ The detector tests are pure-numpy and don't touch the database.
 ### Vercel (one-time)
 
 1. Import the repo. `vercel.json` builds `frontend/` and serves the SPA.
-2. Set env vars: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`.
+2. Set env vars:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` (the **publishable** key,
+     `sb_publishable_…`; the secret key would be inlined into the public
+     bundle and bypass RLS)
 3. Push to `main` to redeploy.
 
-### GCP Cloud Run Jobs (one-time)
+### GCP infra (one-time)
 
-Follow `cloud/README.md` for the `gcloud` bootstrap commands. After that, the
-GitHub Actions workflow `.github/workflows/deploy-jobs.yml` builds the Docker
-image and updates every Cloud Run Job on each push to `main`.
+Provisioned by Pulumi — see [`infra/README.md`](infra/README.md) for the
+~10-minute bootstrap (state bucket, `pulumi stack init prod`, set six config
+values, `pulumi up`).
+
+After that, two GitHub Actions workflows do all the rolling on `main`:
+
+- `.github/workflows/pulumi-up.yml` runs when `infra/**` changes (structure).
+- `.github/workflows/deploy-jobs.yml` runs when `backend/**` changes (image
+  build + `gcloud run jobs update --image=...`).
 
 GitHub Actions secrets required:
 
-- `GCP_PROJECT_ID`
-- `GCP_REGION`
-- `GCP_SA_KEY` (JSON service account key with Run/Artifact Registry/Scheduler permissions)
-- `GCP_ARTIFACT_REPO`
+- `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_SA_KEY`, `GCP_ARTIFACT_REPO` (already
+  there for `deploy-jobs.yml`)
+- `PULUMI_STATE_BUCKET` (GCS bucket name, no `gs://` prefix)
+- `PULUMI_CONFIG_PASSPHRASE`
 
-Cloud Run Job env vars (set in GCP, not in GitHub):
-
-- `EODHD_API_KEY`
-- `PERPLEXITY_API_KEY`
-- `DATABASE_URL`
+Pipeline secrets (`EODHD_API_KEY`, `PERPLEXITY_API_KEY`, `DATABASE_URL`) are
+set as **Pulumi config secrets**, not GitHub secrets — Pulumi writes them to
+Secret Manager and wires them into each Cloud Run Job's env.
 
 ### Schedule
 

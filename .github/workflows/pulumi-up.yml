@@ -1,0 +1,63 @@
+name: Pulumi up (GCP infra)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "infra/**"
+      - ".github/workflows/pulumi-up.yml"
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "preview or up"
+        required: true
+        default: "preview"
+        type: choice
+        options: [preview, up]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  pulumi:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    env:
+      PULUMI_CONFIG_PASSPHRASE: ${{ secrets.PULUMI_CONFIG_PASSPHRASE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Pulumi CLI
+        uses: pulumi/actions@v6
+
+      - name: Install Python deps
+        run: pip install -r requirements.txt
+
+      - name: Pulumi login (self-managed GCS state)
+        run: pulumi login "gs://${{ secrets.PULUMI_STATE_BUCKET }}"
+
+      - name: Select stack
+        run: pulumi stack select prod || pulumi stack init prod
+
+      - name: Preview
+        if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'preview')
+        run: pulumi preview --diff
+
+      - name: Up
+        if: github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.action == 'up')
+        run: pulumi up --yes --skip-preview --refresh
