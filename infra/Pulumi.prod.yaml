@@ -1,0 +1,9 @@
+config:
+  # Set these by running, in the infra/ directory:
+  #   pulumi config set gcp:project <your-gcp-project-id>
+  #   pulumi config set gcp:region  europe-west1
+  #   pulumi config set image_uri   europe-west1-docker.pkg.dev/<proj>/grapefruit-pipelines/grapefruit-pipelines:latest
+  #   pulumi config set --secret eodhd_api_key       <key>
+  #   pulumi config set --secret perplexity_api_key  <key>
+  #   pulumi config set --secret database_url        <postgres://...>
+  # Secrets are encrypted at rest with PULUMI_CONFIG_PASSPHRASE.

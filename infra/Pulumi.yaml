@@ -1,0 +1,6 @@
+name: grapefruit-infra
+runtime:
+  name: python
+  options:
+    virtualenv: venv
+description: GCP infra (Artifact Registry, Cloud Run Jobs, Cloud Scheduler) for Grapefruit pipelines.

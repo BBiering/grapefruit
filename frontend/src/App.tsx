@@ -26,8 +26,11 @@ export default function App() {
         {!hasSupabaseConfig && (
           <div className="card" style={{ background: "#3a1f1f" }}>
             <strong>Supabase env vars missing.</strong>{" "}
-            Set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in
-            Vercel project settings, then redeploy.
+            Set <code>VITE_SUPABASE_URL</code> and{" "}
+            <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> in Vercel project
+            settings, then redeploy. Use the <strong>publishable</strong> key
+            (<code>sb_publishable_…</code>) — never the secret key, which would
+            bypass RLS once inlined into the public bundle.
           </div>
         )}
 
