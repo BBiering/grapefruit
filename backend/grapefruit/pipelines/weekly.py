@@ -24,6 +24,7 @@ log = logging.getLogger(__name__)
 
 def run() -> int:
     total = 0
+    failures: list[str] = []
     for step in (
         refresh_universe,
         refresh_fundamentals,
@@ -35,7 +36,17 @@ def run() -> int:
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)
-        rows = int(step.run() or 0)
+        try:
+            rows = int(step.run() or 0)
+        except Exception:  # noqa: BLE001 — isolate steps so one failure
+            # doesn't discard the work of the steps that already succeeded.
+            log.exception("step %s failed; continuing", name)
+            failures.append(name)
+            continue
         log.info("<== %s: %d rows", name, rows)
         total += rows
+    if failures:
+        # Surface a non-zero outcome via the raised error so the run is marked
+        # 'error' in pipeline_runs, but only after every step has had a turn.
+        raise RuntimeError(f"weekly completed with failed steps: {', '.join(failures)}")
     return total

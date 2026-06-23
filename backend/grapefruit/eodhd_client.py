@@ -92,7 +92,18 @@ def _get(path: str, params: dict | None = None):
             )
             time.sleep(retry_after)
             continue
-        resp.raise_for_status()
+        if resp.status_code == 403:
+            # Endpoint not available on the current subscription tier (e.g.
+            # /fundamentals, calendar/earnings). Treat as "no data" so one
+            # gated endpoint doesn't abort the whole run.
+            log.warning("eodhd 403 on %s (not on current plan); skipping", path)
+            return None
+        if resp.status_code >= 400:
+            # Never call raise_for_status(): its message embeds the request URL,
+            # which contains the api_token. Redact before logging/raising.
+            raise RuntimeError(
+                redact(f"eodhd {resp.status_code} on {path}: {resp.text[:200]}")
+            )
         return resp.json()
     log.warning("eodhd gave up on %s after %d 429s", path, _MAX_RETRIES)
     return None
