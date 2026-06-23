@@ -1,9 +1,8 @@
 config:
-  # Set these by running, in the infra/ directory:
-  #   pulumi config set gcp:project <your-gcp-project-id>
-  #   pulumi config set gcp:region  europe-west1
-  #   pulumi config set image_uri   europe-west1-docker.pkg.dev/<proj>/grapefruit-pipelines/grapefruit-pipelines:latest
-  #   pulumi config set --secret eodhd_api_key       <key>
-  #   pulumi config set --secret perplexity_api_key  <key>
-  #   pulumi config set --secret database_url        <postgres://...>
-  # Secrets are encrypted at rest with PULUMI_CONFIG_PASSPHRASE.
+  # Intentionally config-free. Do NOT commit project IDs or secrets here.
+  #
+  # The "Set config from GitHub secrets" step in
+  # .github/workflows/pulumi-up.yml runs `pulumi config set` for all six
+  # values (gcp:project, gcp:region, image_uri, and the three secrets) from
+  # GitHub repo secrets at runtime. Secrets are encrypted at rest in the GCS
+  # state with PULUMI_CONFIG_PASSPHRASE. See infra/README.md.

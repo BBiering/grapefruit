@@ -66,6 +66,22 @@ jobs:
       - name: Select stack
         run: pulumi stack select prod || pulumi stack init prod
 
+      - name: Set config from GitHub secrets
+        env:
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+          GCP_REGION: ${{ secrets.GCP_REGION }}
+          GCP_ARTIFACT_REPO: ${{ secrets.GCP_ARTIFACT_REPO }}
+          EODHD_API_KEY: ${{ secrets.EODHD_API_KEY }}
+          PERPLEXITY_API_KEY: ${{ secrets.PERPLEXITY_API_KEY }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          pulumi config set gcp:project "$GCP_PROJECT_ID"
+          pulumi config set gcp:region  "$GCP_REGION"
+          pulumi config set image_uri   "$GCP_REGION-docker.pkg.dev/$GCP_PROJECT_ID/$GCP_ARTIFACT_REPO/grapefruit-pipelines:latest"
+          pulumi config set --secret eodhd_api_key      "$EODHD_API_KEY"
+          pulumi config set --secret perplexity_api_key "$PERPLEXITY_API_KEY"
+          pulumi config set --secret database_url       "$DATABASE_URL"
+
       - name: Preview
         if: github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && inputs.action == 'preview')
         run: pulumi preview --diff

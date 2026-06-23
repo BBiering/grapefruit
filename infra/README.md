@@ -9,6 +9,15 @@ touch Pulumi.
 
 ## One-time operator bootstrap
 
+You never touch your laptop for config: the `pulumi-up.yml` workflow injects
+every config value from GitHub repo secrets at runtime (the "Set config from
+GitHub secrets" step). The committed `Pulumi.prod.yaml` is intentionally
+config-free — don't commit project IDs or secrets into it.
+
+The only bootstrap that can't run in CI is creating the state bucket and
+enabling APIs. Do this once from Cloud Shell (still no laptop) or any machine
+with `gcloud`:
+
 ```bash
 export PROJECT_ID="your-gcp-project"
 export REGION="europe-west1"
@@ -25,44 +34,29 @@ gcloud services enable \
 # State bucket (one-time; keep it OUT of any Pulumi-managed project).
 gsutil mb -l "$REGION" "gs://grapefruit-pulumi-state"
 gsutil versioning set on "gs://grapefruit-pulumi-state"
-
-# Local auth.
-gcloud auth application-default login
-
-# Pulumi state + stack.
-cd infra
-python -m venv venv && source venv/bin/activate
-pip install -r requirements.txt
-export PULUMI_CONFIG_PASSPHRASE="<choose a long random string and save it>"
-pulumi login "gs://grapefruit-pulumi-state"
-pulumi stack init prod
-
-# Config (plain).
-pulumi config set gcp:project "$PROJECT_ID"
-pulumi config set gcp:region  "$REGION"
-pulumi config set image_uri   "$REGION-docker.pkg.dev/$PROJECT_ID/grapefruit-pipelines/grapefruit-pipelines:latest"
-
-# Config (secrets).
-pulumi config set --secret eodhd_api_key      "$EODHD_API_KEY"
-pulumi config set --secret perplexity_api_key "$PERPLEXITY_API_KEY"
-pulumi config set --secret database_url       "$DATABASE_URL"
-
-# First run.
-pulumi up --yes
 ```
 
-After this, every push to `main` that touches `infra/**` re-runs `pulumi up`
-non-interactively via `.github/workflows/pulumi-up.yml`. The image gets
-rebuilt and rolled by `.github/workflows/deploy-jobs.yml` on the same push if
-backend code changed.
+After that, set the GitHub secrets below and trigger the **Pulumi up** workflow
+(`workflow_dispatch` → `up`, or push to `infra/**`). Every push to `main` that
+touches `infra/**` re-runs `pulumi up` non-interactively via
+`.github/workflows/pulumi-up.yml`. The image gets rebuilt and rolled by
+`.github/workflows/deploy-jobs.yml` on the same push if backend code changed.
 
 ## GitHub Actions secrets
 
-In addition to the four GCP secrets already used by `deploy-jobs.yml`
+`pulumi-up.yml` reads all of its config from these. In addition to the four GCP
+secrets already used by `deploy-jobs.yml`
 (`GCP_SA_KEY`, `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_ARTIFACT_REPO`), add:
 
 - `PULUMI_STATE_BUCKET` — e.g. `grapefruit-pulumi-state` (no `gs://` prefix).
-- `PULUMI_CONFIG_PASSPHRASE` — the same passphrase you exported locally above.
+- `PULUMI_CONFIG_PASSPHRASE` — a long random string; encrypts the secret config
+  at rest in the GCS state. Choose once, never changes.
+- `EODHD_API_KEY`
+- `PERPLEXITY_API_KEY`
+- `DATABASE_URL` — the `postgres://...` connection string.
+
+`image_uri` is derived in the workflow from `GCP_REGION`, `GCP_PROJECT_ID`, and
+`GCP_ARTIFACT_REPO`, so it needs no dedicated secret.
 
 The `GCP_SA_KEY` service account needs these roles (grant once in the GCP
 console or via `gcloud projects add-iam-policy-binding`):
