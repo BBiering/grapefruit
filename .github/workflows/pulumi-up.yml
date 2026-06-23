@@ -42,6 +42,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # Pulumi's Python runtime auto-discovers the project's package manager.
+      # The repo root pyproject.toml uses uv as the build backend, so Pulumi
+      # tries to invoke uv during preview/up. Install it on PATH first.
+      - uses: astral-sh/setup-uv@v3
+
       - name: Install Pulumi CLI
         uses: pulumi/actions@v6
 
