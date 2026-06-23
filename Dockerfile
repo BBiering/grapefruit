@@ -5,7 +5,9 @@ WORKDIR /app
 RUN pip install --no-cache-dir uv
 
 # Install deps separately so pyproject changes invalidate the cache layer only.
-COPY pyproject.toml uv.lock* ./
+# README.md is needed because pyproject declares `readme = "README.md"` and
+# uv builds the local grapefruit package during sync.
+COPY pyproject.toml uv.lock* README.md ./
 RUN uv sync --frozen --no-dev || uv sync --no-dev
 
 COPY backend ./backend

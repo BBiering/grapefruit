@@ -56,9 +56,17 @@ jobs:
             # see infra/__main__.py.
             name="grapefruit-${job//_/-}"
             echo "::group::${name}"
-            gcloud run jobs update "${name}" \
-              --image="${IMAGE}" \
-              --region="${{ secrets.GCP_REGION }}" \
-              --quiet
+            # The jobs are created by Pulumi (pulumi-up.yml). On first bootstrap
+            # they may not exist yet — this step only rolls the image onto jobs
+            # that already exist, so build+push above is what seeds :latest for
+            # Pulumi's initial create. Skip (don't fail) if the job is absent.
+            if gcloud run jobs describe "${name}" --region="${{ secrets.GCP_REGION }}" --quiet >/dev/null 2>&1; then
+              gcloud run jobs update "${name}" \
+                --image="${IMAGE}" \
+                --region="${{ secrets.GCP_REGION }}" \
+                --quiet
+            else
+              echo "job ${name} does not exist yet (run pulumi-up); skipping image update"
+            fi
             echo "::endgroup::"
           done
