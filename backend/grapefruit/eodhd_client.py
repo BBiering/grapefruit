@@ -26,6 +26,30 @@ _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 _TIMEOUT = 30.0
 
+# Exchanges that make up the universe. EODHD has no unified "EU" exchange, so
+# Europe is enumerated per-country. The symbol stored everywhere is the full
+# EODHD ticker ("BMW.XETRA"), which is globally unique across these.
+EXCHANGES: list[str] = ["US", "LSE", "XETRA", "PA", "ST", "CO", "HE", "OL"]
+
+# Reporting currency of each exchange's MarketCapitalization / prices. Used to
+# convert market cap to USD for the small-cap filter. LSE quotes in pence (GBX),
+# so its cap is reported in GBP but prices in pence — only the cap conversion
+# matters here, and EODHD reports LSE MarketCapitalization in GBP.
+_EXCHANGE_CURRENCY: dict[str, str] = {
+    "US": "USD",
+    "LSE": "GBP",
+    "XETRA": "EUR",
+    "PA": "EUR",
+    "ST": "SEK",
+    "CO": "DKK",
+    "HE": "EUR",
+    "OL": "NOK",
+}
+
+
+def exchange_currency(exchange: str) -> str:
+    return _EXCHANGE_CURRENCY.get(exchange, "USD")
+
 
 def _require_key() -> str:
     if not settings.eodhd_api_key:
@@ -74,43 +98,60 @@ def _get(path: str, params: dict | None = None):
     return None
 
 
-def list_symbols() -> list[dict]:
-    """All symbols on the unified US exchange. Each item has Code/Name/Type/etc."""
-    data = _get("exchange-symbol-list/US")
+def list_symbols(exchange: str = "US") -> list[dict]:
+    """All symbols on `exchange`. Each item has Code/Name/Type/etc."""
+    data = _get(f"exchange-symbol-list/{exchange}")
     return data if isinstance(data, list) else []
 
 
 def fetch_eod(symbol: str, start: date, end: date) -> list[dict]:
-    """Daily EOD bars for `symbol` in [start, end]. Items have date/OHLC/adjusted_close/volume."""
+    """Daily EOD bars for `symbol` in [start, end].
+
+    `symbol` is a full EODHD ticker including the exchange suffix, e.g.
+    "AAPL.US" or "BMW.XETRA". Items have date/OHLC/adjusted_close/volume.
+    """
     data = _get(
-        f"eod/{symbol}.US",
+        f"eod/{symbol}",
         {"period": "d", "from": start.isoformat(), "to": end.isoformat(), "order": "a"},
     )
     return data if isinstance(data, list) else []
 
 
-def fetch_bulk_extended(symbols: list[str] | None = None) -> list[dict]:
-    """EOD bulk last-day for the US exchange with extended fields.
+def fetch_bulk_extended(exchange: str, symbols: list[str] | None = None) -> list[dict]:
+    """EOD bulk last-day for `exchange` with extended fields.
 
-    A single request returns one record per symbol with `name` and
-    `MarketCapitalization` (absolute USD) plus the latest OHLCV and moving
-    averages. Pass `symbols` to filter server-side; omit to pull the whole
-    exchange in one call. Used for metadata because the per-symbol
-    `/fundamentals` endpoint requires a higher subscription tier.
+    A single request returns one record per symbol with `code`, `name`, `type`,
+    and `MarketCapitalization` (in the exchange's local currency) plus the
+    latest OHLCV and moving averages. Pass `symbols` (bare codes, no suffix) to
+    filter server-side; omit to pull the whole exchange in one call. This is the
+    universe + metadata source: the per-symbol `/fundamentals` endpoint is not
+    available on the current subscription tier.
     """
     params = {"filter": "extended"}
     if symbols:
         params["symbols"] = ",".join(symbols)
-    data = _get("eod-bulk-last-day/US", params)
+    data = _get(f"eod-bulk-last-day/{exchange}", params)
     return data if isinstance(data, list) else []
 
 
+def fetch_fx_rate(currency: str) -> float | None:
+    """Latest <currency>USD spot rate (e.g. 'SEK' -> ~0.10). USD returns 1.0."""
+    if currency == "USD":
+        return 1.0
+    data = _get(f"real-time/{currency}USD.FOREX")
+    if isinstance(data, dict):
+        close = data.get("close")
+        if isinstance(close, (int, float)) and close > 0:
+            return float(close)
+    return None
+
+
 def fetch_news(symbol: str, start: date, end: date, limit: int = 50) -> list[dict]:
-    """News articles mentioning `symbol` in [start, end]."""
+    """News articles mentioning `symbol` (full EODHD ticker) in [start, end]."""
     data = _get(
         "news",
         {
-            "s": f"{symbol}.US",
+            "s": symbol,
             "from": start.isoformat(),
             "to": end.isoformat(),
             "limit": limit,

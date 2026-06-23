@@ -1,8 +1,11 @@
 """Weekly: refresh the Part 2 watchlist.
 
-Stub strategy: small-cap (market cap 50M-5B), low-priced (last close <= 20),
-common stocks. Atomically replaces the table. Future Part 2 work will weight
-by the catalysts found in Part 1.
+Stub strategy: the universe is already small-cap common stocks ($300M-$2B USD)
+across US + EU exchanges, so the watchlist is currently the full universe with
+a latest close attached. Atomically replaces the table. (The old absolute
+last-close <= $20 rule was dropped: bars are now in mixed local currencies
+— USD, GBp, EUR, SEK, DKK, NOK — so a flat price threshold is meaningless.)
+Future Part 2 work will weight by the catalysts found in Part 1.
 """
 from __future__ import annotations
 
@@ -28,9 +31,9 @@ def run() -> int:
                    a.sector, a.industry
             FROM assets a
             JOIN latest l ON l.symbol = a.symbol
-            WHERE l.close IS NOT NULL AND l.close > 0 AND l.close <= 20
+            WHERE l.close IS NOT NULL AND l.close > 0
               AND a.market_cap_usd IS NOT NULL
-              AND a.market_cap_usd BETWEEN 50e6 AND 5e9
+              AND a.market_cap_usd BETWEEN 300e6 AND 2e9
             ORDER BY a.market_cap_usd DESC
             """
         )
@@ -41,7 +44,7 @@ def run() -> int:
                 "market_cap_usd": float(r[2]) if r[2] is not None else None,
                 "sector": r[3],
                 "industry": r[4],
-                "why_listed": "small_cap_low_price",
+                "why_listed": "small_cap",
             }
             for r in cur.fetchall()
         ]

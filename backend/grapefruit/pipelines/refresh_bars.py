@@ -1,7 +1,7 @@
 """Daily / on-demand: pull only the bars missing since the last run.
 
 For each symbol in `assets`, fetch [latest_bar_date+1, today] from EODHD.
-If no bars exist yet, pulls the last 5 years (initial run).
+If no bars exist yet, pulls the last 3 years (initial run).
 """
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-_INITIAL_LOOKBACK_DAYS = 5 * 365 + 30
+_INITIAL_LOOKBACK_DAYS = 3 * 365 + 30
 _MAX_WORKERS = 16
 
 

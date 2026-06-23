@@ -1,6 +1,11 @@
 """Weekly: pull the next ~60 days of US earnings dates from EODHD and stash
 them in `upcoming_events`. Phase-3 trial results need a separate data source
 (future Part 2 work); this pipeline only does earnings for now.
+
+NOTE: this remains US-only. EODHD's earnings calendar is US-centric, and the
+codes it returns are bare (no exchange suffix), so they only line up with the
+`.US` slice of the universe. Extending earnings to the EU exchanges is future
+work that needs a calendar source keyed by full ticker.
 """
 from __future__ import annotations
 
@@ -19,13 +24,14 @@ def run() -> int:
     rows_raw = eodhd_client.fetch_earnings_calendar(today, end)
     rows: list[dict] = []
     for r in rows_raw:
-        sym = (r.get("code") or "").split(".")[0]
+        bare = (r.get("code") or "").split(".")[0]
         ts = r.get("report_date") or r.get("date")
-        if not sym or not ts:
+        if not bare or not ts:
             continue
+        # Store the full ticker so it joins to the universe (US-only for now).
         rows.append(
             {
-                "symbol": sym,
+                "symbol": f"{bare}.US",
                 "event_ts": ts,
                 "event_type": "earnings",
                 "title": r.get("currency"),
