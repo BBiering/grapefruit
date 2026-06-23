@@ -138,9 +138,13 @@ def _env_from_secret(name: str, secret: gcp.secretmanager.Secret) -> gcp.cloudru
 
 
 def _make_job(job_name: str) -> gcp.cloudrunv2.Job:
+    # Cloud Run job_id allows only lowercase letters, digits, and hyphens, so
+    # the resource name is hyphenated. The container arg keeps the underscore
+    # form because it maps to a Python module / KNOWN_JOBS key in
+    # grapefruit.pipelines.__main__.
     return gcp.cloudrunv2.Job(
         f"job-{job_name}",
-        name=f"grapefruit-{job_name}",
+        name=f"grapefruit-{job_name.replace('_', '-')}",
         location=REGION,
         template=gcp.cloudrunv2.JobTemplateArgs(
             template=gcp.cloudrunv2.JobTemplateTemplateArgs(

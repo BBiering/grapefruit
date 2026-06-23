@@ -52,8 +52,11 @@ jobs:
       - name: Update Cloud Run Jobs
         run: |
           for job in ${JOBS}; do
-            echo "::group::grapefruit-${job}"
-            gcloud run jobs update "grapefruit-${job}" \
+            # Cloud Run job names are hyphenated (the arg keeps underscores);
+            # see infra/__main__.py.
+            name="grapefruit-${job//_/-}"
+            echo "::group::${name}"
+            gcloud run jobs update "${name}" \
               --image="${IMAGE}" \
               --region="${{ secrets.GCP_REGION }}" \
               --quiet
