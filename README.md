@@ -103,14 +103,17 @@ After that, two GitHub Actions workflows do all the rolling on `main`:
 
 GitHub Actions secrets required:
 
-- `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_SA_KEY`, `GCP_ARTIFACT_REPO` (already
-  there for `deploy-jobs.yml`)
+- `GCP_PROJECT_ID`, `GCP_REGION`, `GCP_SA_KEY`, `GCP_ARTIFACT_REPO` (used by
+  both workflows)
 - `PULUMI_STATE_BUCKET` (GCS bucket name, no `gs://` prefix)
-- `PULUMI_CONFIG_PASSPHRASE`
+- `PULUMI_CONFIG_PASSPHRASE` (any long random string; encrypts secrets in
+  Pulumi state)
+- `EODHD_API_KEY`, `PERPLEXITY_API_KEY`, `DATABASE_URL` (pipeline secrets;
+  `pulumi-up.yml` reads them and writes them to Pulumi config + GCP Secret
+  Manager, then wires them into each Cloud Run Job's env)
 
-Pipeline secrets (`EODHD_API_KEY`, `PERPLEXITY_API_KEY`, `DATABASE_URL`) are
-set as **Pulumi config secrets**, not GitHub secrets — Pulumi writes them to
-Secret Manager and wires them into each Cloud Run Job's env.
+No `pulumi config set` is required locally — every value is set from a
+GitHub secret on each workflow run.
 
 ### Schedule
 
