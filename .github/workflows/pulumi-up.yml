@@ -50,8 +50,15 @@ jobs:
       - name: Install Pulumi CLI
         uses: pulumi/actions@v6
 
-      - name: Install Python deps
-        run: pip install -r requirements.txt
+      # Pulumi.yaml declares runtime.options.virtualenv: venv, so Pulumi runs
+      # the program with infra/venv/bin/python. Create that venv and install
+      # the deps into it (NOT system Python), or Pulumi launches an interpreter
+      # without the `pulumi` module ("No module named 'pulumi'").
+      - name: Create venv and install deps
+        run: |
+          python -m venv venv
+          ./venv/bin/python -m pip install --upgrade pip
+          ./venv/bin/pip install -r requirements.txt
 
       - name: Pulumi login (self-managed GCS state)
         run: pulumi login "gs://${{ secrets.PULUMI_STATE_BUCKET }}"
