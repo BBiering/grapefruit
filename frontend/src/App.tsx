@@ -15,16 +15,32 @@ export default function App() {
 
   return (
     <QueryClientProvider client={qc}>
-      <div className="app">
-        <h1>🍊 Grapefruit</h1>
-        <div className="banner">
-          <strong>Survivorship bias:</strong> the US symbol list is dominated by
-          currently active tickers. Delisted, acquired, and bankrupt stocks are
-          largely absent. Treat every winner as filtered through survivorship.
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true">🍊</span>
+            <span className="brand-name">Grapefruit</span>
+          </div>
+          <nav className="nav">
+            <button
+              className={tab === "past" ? "navbtn active" : "navbtn"}
+              onClick={() => setTab("past")}
+            >
+              Past winners
+            </button>
+            <button
+              className={tab === "future" ? "navbtn active" : "navbtn"}
+              onClick={() => setTab("future")}
+            >
+              Future winners
+            </button>
+          </nav>
         </div>
+      </header>
 
+      <main className="app">
         {!hasSupabaseConfig && (
-          <div className="card" style={{ background: "#3a1f1f" }}>
+          <div className="card warn">
             <strong>Supabase env vars missing.</strong>{" "}
             Set <code>VITE_SUPABASE_URL</code> and{" "}
             <code>VITE_SUPABASE_PUBLISHABLE_KEY</code> in Vercel project
@@ -34,23 +50,8 @@ export default function App() {
           </div>
         )}
 
-        <nav>
-          <button
-            className={tab === "past" ? "tab active" : "tab"}
-            onClick={() => setTab("past")}
-          >
-            Past winners
-          </button>
-          <button
-            className={tab === "future" ? "tab active" : "tab"}
-            onClick={() => setTab("future")}
-          >
-            Future winners
-          </button>
-        </nav>
-
         {tab === "past" ? <PastWinners /> : <FutureWinners />}
-      </div>
+      </main>
     </QueryClientProvider>
   );
 }
