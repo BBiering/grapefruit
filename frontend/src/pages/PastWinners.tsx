@@ -20,6 +20,16 @@ function formatMoney(usd: number | null) {
   return `$${usd.toFixed(0)}`;
 }
 
+// Symbols are stored as full EODHD tickers (e.g. "DRUG.US", "ACG.LSE") so they
+// are unique across exchanges; the UI shows just the bare ticker.
+function displaySymbol(symbol: string) {
+  return symbol.includes(".") ? symbol.slice(0, symbol.lastIndexOf(".")) : symbol;
+}
+
+function exchangeOf(symbol: string) {
+  return symbol.includes(".") ? symbol.slice(symbol.lastIndexOf(".") + 1) : "";
+}
+
 function formatPct(v: number | null) {
   if (v == null) return "—";
   return `${(v * 100).toFixed(0)}%`;
@@ -194,6 +204,8 @@ export default function PastWinners() {
               <option value={500e6}>≤ $500M</option>
               <option value={1e9}>≤ $1B</option>
               <option value={2e9}>≤ $2B</option>
+              <option value={5e9}>≤ $5B</option>
+              <option value={10e9}>≤ $10B</option>
             </select>
           </label>
         </div>
@@ -207,7 +219,7 @@ export default function PastWinners() {
               onClick={() => setSelectedId(w.id)}
             >
               <div className="wi-top">
-                <span className="wi-symbol">{w.symbol}</span>
+                <span className="wi-symbol">{displaySymbol(w.symbol)}</span>
                 <span className="wi-mult">{w.multiplier.toFixed(1)}x</span>
               </div>
               <div className="wi-name">{w.name ?? "—"}</div>
@@ -246,7 +258,10 @@ function WinnerDetail({ w }: { w: Winner }) {
     <div>
       <div className="detail-head">
         <div>
-          <h2 className="detail-title">{w.symbol}</h2>
+          <h2 className="detail-title">
+            {displaySymbol(w.symbol)}
+            <span className="detail-exchange">{exchangeOf(w.symbol)}</span>
+          </h2>
           <div className="muted">{w.name ?? "—"}</div>
         </div>
         <div className="detail-badges">
@@ -305,14 +320,11 @@ function WinnerDetail({ w }: { w: Winner }) {
         <Stat label="Market cap @ peak" value={formatMoney(w.market_cap_usd_at_peak)} />
         <Stat label="Trough → Peak" value={`${w.start_ts} → ${w.end_ts}`} />
         <Stat label="Days to peak" value={String(w.days_to_peak)} />
-        <Stat
-          label="Held (30d)"
-          value={formatPct(w.post_peak_retention)}
-          title="Close ~30 days after the peak ÷ peak price. 100% = fully held."
-        />
+        <Stat label="Catalyst" value={w.headline || "—"} />
         <Stat
           label="Foreseeable?"
           value={w.was_foreseeable == null ? "—" : w.was_foreseeable ? "Yes" : "No"}
+          tone={w.was_foreseeable == null ? undefined : w.was_foreseeable ? "good" : "bad"}
         />
       </div>
 
@@ -339,17 +351,24 @@ function Stat({
   label,
   value,
   accent,
+  tone,
   title,
 }: {
   label: string;
   value: string;
   accent?: boolean;
+  tone?: "good" | "bad";
   title?: string;
 }) {
+  const cls = accent
+    ? "stat-value accent"
+    : tone
+    ? `stat-value ${tone}`
+    : "stat-value";
   return (
     <div className="stat" title={title}>
       <div className="stat-label">{label}</div>
-      <div className={accent ? "stat-value accent" : "stat-value"}>{value}</div>
+      <div className={cls}>{value}</div>
     </div>
   );
 }

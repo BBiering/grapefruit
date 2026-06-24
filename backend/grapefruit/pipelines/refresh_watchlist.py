@@ -1,6 +1,6 @@
 """Weekly: refresh the Part 2 watchlist.
 
-Stub strategy: the universe is already small-cap common stocks ($300M-$2B USD)
+Stub strategy: the universe is already small/mid-cap common stocks ($300M-$10B USD)
 across US + EU exchanges, so the watchlist is currently the full universe with
 a latest close attached. Atomically replaces the table. (The old absolute
 last-close <= $20 rule was dropped: bars are now in mixed local currencies
@@ -33,7 +33,7 @@ def run() -> int:
             JOIN latest l ON l.symbol = a.symbol
             WHERE l.close IS NOT NULL AND l.close > 0
               AND a.market_cap_usd IS NOT NULL
-              AND a.market_cap_usd BETWEEN 300e6 AND 2e9
+              AND a.market_cap_usd BETWEEN 300e6 AND 10e9
             ORDER BY a.market_cap_usd DESC
             """
         )

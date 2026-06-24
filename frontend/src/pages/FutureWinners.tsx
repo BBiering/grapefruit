@@ -99,7 +99,7 @@ export default function FutureWinners() {
     <div>
       <div className="card">
         <span className="muted">
-          {rows.length} candidates · small-cap (market cap $300M–$2B) · US + EU.
+          {rows.length} candidates · small/mid-cap (market cap $300M–$10B) · US + EU.
           Sorted by nearest upcoming event.
         </span>
       </div>
