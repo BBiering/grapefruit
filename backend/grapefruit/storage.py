@@ -180,6 +180,26 @@ def init_db() -> None:
         cur.execute("CREATE INDEX IF NOT EXISTS upcoming_events_ts_idx ON upcoming_events(event_ts)")
         cur.execute("CREATE INDEX IF NOT EXISTS pipeline_runs_job_idx ON pipeline_runs(job_name, started_at DESC)")
 
+        # FKs to assets(symbol) so PostgREST can embed `assets(name)` from the
+        # winners / watchlist queries the frontend makes. See
+        # supabase/migrations/0002_assets_fks.sql. assets is created above, so
+        # the target exists; guarded by pg_constraint so re-runs are no-ops.
+        cur.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'winners_symbol_fkey') THEN
+                    ALTER TABLE winners ADD CONSTRAINT winners_symbol_fkey
+                        FOREIGN KEY (symbol) REFERENCES assets(symbol) ON DELETE CASCADE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'watchlist_symbol_fkey') THEN
+                    ALTER TABLE watchlist ADD CONSTRAINT watchlist_symbol_fkey
+                        FOREIGN KEY (symbol) REFERENCES assets(symbol) ON DELETE CASCADE;
+                END IF;
+            END $$;
+            """
+        )
+
 
 # ---------------------------------------------------------------------------
 # bars
