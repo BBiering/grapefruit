@@ -19,8 +19,14 @@ export interface Winner {
   // joined from winner_catalysts
   headline: string | null;
   summary: string | null;
+  spike_explanation: string | null;
   was_foreseeable: boolean | null;
   foreseeable_evidence: string | null;
+}
+
+export interface Bar {
+  ts: string;
+  close: number;
 }
 
 export interface WatchlistRow {

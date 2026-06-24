@@ -51,6 +51,48 @@ def exchange_currency(exchange: str) -> str:
     return _EXCHANGE_CURRENCY.get(exchange, "USD")
 
 
+# Currencies that mark a symbol as NATIVE to the exchange (vs a foreign
+# cross-listing). EODHD's per-exchange feeds are polluted with foreign
+# companies cross-listed under cryptic codes (e.g. "0RA9.LSE" is the French
+# biotech Abivax, whose real listing is ABVX.PA). Those are priced in their
+# home currency, not the exchange's, so currency is the discriminator. LSE
+# natives quote in pence (GBX) or pounds (GBP).
+_NATIVE_CURRENCIES: dict[str, set[str]] = {
+    "US": {"USD"},
+    "LSE": {"GBX", "GBP"},
+    "XETRA": {"EUR"},
+    "PA": {"EUR"},
+    "ST": {"SEK"},
+    "CO": {"DKK"},
+    "HE": {"EUR"},
+    "OL": {"NOK"},
+}
+
+
+def native_symbol_meta(exchange: str) -> dict[str, dict]:
+    """Map of {bare_code: {name, isin, currency}} for NATIVE common stocks on
+    `exchange` (foreign cross-listings filtered out by currency).
+
+    Reads the exchange-symbol-list endpoint, which — unlike the bulk feed —
+    carries Currency and Isin. Used by refresh_universe to reject phantom
+    cross-listings and to dedup the same company across exchanges by ISIN.
+    """
+    native = _NATIVE_CURRENCIES.get(exchange, {_EXCHANGE_CURRENCY.get(exchange, "USD")})
+    out: dict[str, dict] = {}
+    for r in list_symbols(exchange):
+        if r.get("Type") != "Common Stock":
+            continue
+        code = r.get("Code")
+        if not code or r.get("Currency") not in native:
+            continue
+        out[code] = {
+            "name": r.get("Name"),
+            "isin": r.get("Isin"),
+            "currency": r.get("Currency"),
+        }
+    return out
+
+
 def _require_key() -> str:
     if not settings.eodhd_api_key:
         raise RuntimeError(

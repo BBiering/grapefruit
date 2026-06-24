@@ -13,6 +13,7 @@ from grapefruit.pipelines import (
     enrich_catalysts,
     refresh_bars,
     refresh_fundamentals,
+    refresh_sectors,
     refresh_universe,
     refresh_upcoming_events,
     refresh_watchlist,
@@ -30,8 +31,9 @@ def run() -> int:
         refresh_fundamentals,
         refresh_bars,
         detect_winners,
-        enrich_catalysts,
         refresh_watchlist,
+        refresh_sectors,   # after winners/watchlist exist, so it scopes to them
+        enrich_catalysts,
         refresh_upcoming_events,
     ):
         name = step.__name__.split(".")[-1]

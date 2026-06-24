@@ -1,34 +1,37 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceDot,
+  CartesianGrid,
+} from "recharts";
 import { supabase } from "../supabase";
-import type { Winner } from "../types";
+import type { Winner, Bar } from "../types";
 
 function formatMoney(usd: number | null) {
-  if (usd == null) return <span className="muted">—</span>;
+  if (usd == null) return "—";
   if (usd >= 1e9) return `$${(usd / 1e9).toFixed(2)}B`;
   if (usd >= 1e6) return `$${(usd / 1e6).toFixed(0)}M`;
   return `$${usd.toFixed(0)}`;
 }
 
 function formatPct(v: number | null) {
-  if (v == null) return <span className="muted">—</span>;
+  if (v == null) return "—";
   return `${(v * 100).toFixed(0)}%`;
 }
 
-function formatBool(v: boolean | null) {
-  if (v == null) return <span className="muted">—</span>;
-  return v ? (
-    <span style={{ color: "#5fbf6f" }}>Yes</span>
-  ) : (
-    <span style={{ color: "#bf6f6f" }}>No</span>
-  );
-}
-
-interface RawWinner extends Omit<Winner, "name" | "headline" | "summary" | "was_foreseeable" | "foreseeable_evidence"> {
-  assets: { name: string | null } | null;
+interface RawWinner
+  extends Omit<Winner, "name" | "headline" | "summary" | "spike_explanation" | "was_foreseeable" | "foreseeable_evidence" | "sector" | "industry"> {
+  assets: { name: string | null; sector: string | null; industry: string | null } | null;
   winner_catalysts: {
     headline: string | null;
     summary: string | null;
+    spike_explanation: string | null;
     was_foreseeable: boolean | null;
     foreseeable_evidence: string | null;
   } | null;
@@ -41,46 +44,96 @@ async function fetchWinners(): Promise<Winner[]> {
       id, symbol, start_ts, end_ts, days_to_peak,
       trough_price, peak_price, multiplier,
       post_peak_retention, breakout_ratio,
-      market_cap_usd_at_peak, sector, industry, status, detected_at,
-      assets ( name ),
-      winner_catalysts ( headline, summary, was_foreseeable, foreseeable_evidence )
+      market_cap_usd_at_peak, status, detected_at,
+      assets ( name, sector, industry ),
+      winner_catalysts ( headline, summary, spike_explanation, was_foreseeable, foreseeable_evidence )
     `)
-    .order("detected_at", { ascending: false })
+    .order("multiplier", { ascending: false })
     .limit(500);
   if (error) throw error;
   return ((data ?? []) as unknown as RawWinner[]).map((r) => ({
     ...r,
     name: r.assets?.name ?? null,
+    sector: r.assets?.sector ?? null,
+    industry: r.assets?.industry ?? null,
     headline: r.winner_catalysts?.headline ?? null,
     summary: r.winner_catalysts?.summary ?? null,
+    spike_explanation: r.winner_catalysts?.spike_explanation ?? null,
     was_foreseeable: r.winner_catalysts?.was_foreseeable ?? null,
     foreseeable_evidence: r.winner_catalysts?.foreseeable_evidence ?? null,
   }));
 }
 
+async function fetchBars(symbol: string): Promise<Bar[]> {
+  const { data, error } = await supabase
+    .from("bars")
+    .select("ts, close")
+    .eq("symbol", symbol)
+    .order("ts", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Bar[];
+}
+
+type SortKey = "multiplier" | "market_cap" | "recent";
+
 export default function PastWinners() {
   const [minMult, setMinMult] = useState(5);
+  const [sector, setSector] = useState("");
   const [industry, setIndustry] = useState("");
+  const [maxCap, setMaxCap] = useState<number>(0); // 0 = no cap filter
+  const [sortKey, setSortKey] = useState<SortKey>("multiplier");
+  const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const q = useQuery({ queryKey: ["winners"], queryFn: fetchWinners });
+
+  const sectors = useMemo(() => {
+    const set = new Set<string>();
+    (q.data ?? []).forEach((w) => w.sector && set.add(w.sector));
+    return [...set].sort();
+  }, [q.data]);
+
+  const industries = useMemo(() => {
+    const set = new Set<string>();
+    (q.data ?? [])
+      .filter((w) => !sector || w.sector === sector)
+      .forEach((w) => w.industry && set.add(w.industry));
+    return [...set].sort();
+  }, [q.data, sector]);
 
   const rows = useMemo(() => {
     let r = q.data ?? [];
     if (minMult) r = r.filter((w) => w.multiplier >= minMult);
+    if (sector) r = r.filter((w) => w.sector === sector);
     if (industry) r = r.filter((w) => w.industry === industry);
-    return r;
-  }, [q.data, minMult, industry]);
+    if (maxCap) r = r.filter((w) => (w.market_cap_usd_at_peak ?? 0) <= maxCap);
+    const sorted = [...r];
+    sorted.sort((a, b) => {
+      if (sortKey === "multiplier") return b.multiplier - a.multiplier;
+      if (sortKey === "market_cap")
+        return (b.market_cap_usd_at_peak ?? 0) - (a.market_cap_usd_at_peak ?? 0);
+      return b.end_ts.localeCompare(a.end_ts); // recent
+    });
+    return sorted;
+  }, [q.data, minMult, sector, industry, maxCap, sortKey]);
 
-  const industries = useMemo(() => {
-    const set = new Set<string>();
-    (q.data ?? []).forEach((w) => w.industry && set.add(w.industry));
-    return [...set].sort();
-  }, [q.data]);
+  // Keep a valid selection as filters change.
+  useEffect(() => {
+    if (rows.length === 0) {
+      setSelectedId(null);
+    } else if (!rows.some((w) => w.id === selectedId)) {
+      setSelectedId(rows[0].id);
+    }
+  }, [rows, selectedId]);
+
+  const selected = useMemo(
+    () => rows.find((w) => w.id === selectedId) ?? null,
+    [rows, selectedId],
+  );
 
   if (q.isLoading) return <div className="muted">Loading winners…</div>;
   if (q.error) {
     return (
-      <div className="card" style={{ background: "#3a1f1f" }}>
+      <div className="card warn">
         <strong>Failed to load winners.</strong>
         <div className="muted">{(q.error as Error).message}</div>
       </div>
@@ -88,68 +141,237 @@ export default function PastWinners() {
   }
 
   return (
+    <div className="winners-layout">
+      {/* ---- left: filters + list ---- */}
+      <aside className="winners-list">
+        <div className="filters">
+          <label>
+            Sort
+            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
+              <option value="multiplier">Multiplier</option>
+              <option value="market_cap">Market cap</option>
+              <option value="recent">Most recent</option>
+            </select>
+          </label>
+          <label>
+            Min multiplier
+            <input
+              type="number"
+              min={1}
+              step={0.5}
+              value={minMult}
+              onChange={(e) => setMinMult(Number(e.target.value))}
+            />
+          </label>
+          <label>
+            Sector
+            <select
+              value={sector}
+              onChange={(e) => {
+                setSector(e.target.value);
+                setIndustry("");
+              }}
+            >
+              <option value="">All</option>
+              {sectors.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Industry
+            <select value={industry} onChange={(e) => setIndustry(e.target.value)}>
+              <option value="">All</option>
+              {industries.map((i) => (
+                <option key={i} value={i}>{i}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Max market cap
+            <select value={maxCap} onChange={(e) => setMaxCap(Number(e.target.value))}>
+              <option value={0}>Any</option>
+              <option value={500e6}>≤ $500M</option>
+              <option value={1e9}>≤ $1B</option>
+              <option value={2e9}>≤ $2B</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="muted list-count">{rows.length} winners</div>
+        <ul className="winner-items">
+          {rows.map((w) => (
+            <li
+              key={w.id}
+              className={w.id === selectedId ? "winner-item active" : "winner-item"}
+              onClick={() => setSelectedId(w.id)}
+            >
+              <div className="wi-top">
+                <span className="wi-symbol">{w.symbol}</span>
+                <span className="wi-mult">{w.multiplier.toFixed(1)}x</span>
+              </div>
+              <div className="wi-name">{w.name ?? "—"}</div>
+              <div className="wi-meta muted">
+                {w.industry ?? w.sector ?? "—"} · {formatMoney(w.market_cap_usd_at_peak)}
+              </div>
+            </li>
+          ))}
+        </ul>
+      </aside>
+
+      {/* ---- right: detail ---- */}
+      <section className="winner-detail">
+        {selected ? <WinnerDetail w={selected} /> : <div className="muted">No winner selected.</div>}
+      </section>
+    </div>
+  );
+}
+
+function WinnerDetail({ w }: { w: Winner }) {
+  const bq = useQuery({
+    queryKey: ["bars", w.symbol],
+    queryFn: () => fetchBars(w.symbol),
+    staleTime: 5 * 60_000,
+  });
+
+  const series = useMemo(
+    () => (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close })),
+    [bq.data],
+  );
+
+  const troughPoint = series.find((p) => p.ts === w.start_ts);
+  const peakPoint = series.find((p) => p.ts === w.end_ts);
+
+  return (
     <div>
-      <div className="card row" style={{ flexWrap: "wrap" }}>
-        <label>
-          Min multiplier:{" "}
-          <input
-            type="number"
-            min={1}
-            step={0.5}
-            value={minMult}
-            onChange={(e) => setMinMult(Number(e.target.value))}
-          />
-        </label>
-        <label>
-          Industry:{" "}
-          <select value={industry} onChange={(e) => setIndustry(e.target.value)}>
-            <option value="">All</option>
-            {industries.map((i) => (
-              <option key={i} value={i}>{i}</option>
-            ))}
-          </select>
-        </label>
-        <span className="muted">{rows.length} winners</span>
+      <div className="detail-head">
+        <div>
+          <h2 className="detail-title">{w.symbol}</h2>
+          <div className="muted">{w.name ?? "—"}</div>
+        </div>
+        <div className="detail-badges">
+          {w.sector && <span className="badge">{w.sector}</span>}
+          {w.industry && <span className="badge subtle">{w.industry}</span>}
+        </div>
       </div>
 
-      <table>
-        <thead>
-          <tr>
-            <th>Symbol</th>
-            <th>Name</th>
-            <th>Industry</th>
-            <th>Mkt cap @ peak</th>
-            <th>Trough → Peak</th>
-            <th>Days</th>
-            <th>Multiplier</th>
-            <th>Catalyst</th>
-            <th title="Was the move foreseeable from public info before the spike?">
-              Foreseeable?
-            </th>
-            <th>Retention</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((w) => (
-            <tr key={w.id}>
-              <td><strong>{w.symbol}</strong></td>
-              <td>{w.name ?? <span className="muted">—</span>}</td>
-              <td>{w.industry ?? <span className="muted">—</span>}</td>
-              <td>{formatMoney(w.market_cap_usd_at_peak)}</td>
-              <td>{w.start_ts} → {w.end_ts}</td>
-              <td>{w.days_to_peak}</td>
-              <td>{w.multiplier.toFixed(1)}x</td>
-              <td title={w.summary ?? ""}>
-                {w.headline ?? <span className="muted">—</span>}
-              </td>
-              <td title={w.foreseeable_evidence ?? ""}>
-                {formatBool(w.was_foreseeable)}
-              </td>
-              <td>{formatPct(w.post_peak_retention)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* chart */}
+      <div className="card chart-card">
+        {bq.isLoading ? (
+          <div className="muted chart-empty">Loading price history…</div>
+        ) : series.length < 2 ? (
+          <div className="muted chart-empty">No price history available.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={series} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="rgba(28,26,24,0.06)" vertical={false} />
+              <XAxis
+                dataKey="ts"
+                tick={{ fontSize: 11, fill: "#6b6661" }}
+                minTickGap={60}
+                tickFormatter={(t) => String(t).slice(0, 7)}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#6b6661" }}
+                width={48}
+                domain={["auto", "auto"]}
+              />
+              <Tooltip
+                formatter={(v: number) => [v.toFixed(2), "Close"]}
+                labelStyle={{ color: "#1c1a18" }}
+                contentStyle={{ borderRadius: 10, border: "1px solid rgba(28,26,24,0.1)" }}
+              />
+              <Line
+                type="monotone"
+                dataKey="close"
+                stroke="#e8664f"
+                strokeWidth={2}
+                dot={false}
+              />
+              {troughPoint && (
+                <ReferenceDot x={troughPoint.ts} y={troughPoint.close} r={5} fill="#6b6661" stroke="#fff" />
+              )}
+              {peakPoint && (
+                <ReferenceDot x={peakPoint.ts} y={peakPoint.close} r={5} fill="#f4bd4c" stroke="#fff" />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* key stats */}
+      <div className="stats-grid">
+        <Stat label="Multiplier" value={`${w.multiplier.toFixed(1)}x`} accent />
+        <Stat label="Market cap @ peak" value={formatMoney(w.market_cap_usd_at_peak)} />
+        <Stat label="Trough → Peak" value={`${w.start_ts} → ${w.end_ts}`} />
+        <Stat label="Days to peak" value={String(w.days_to_peak)} />
+        <Stat
+          label="Held (30d)"
+          value={formatPct(w.post_peak_retention)}
+          title="Close ~30 days after the peak ÷ peak price. 100% = fully held."
+        />
+        <Stat
+          label="Foreseeable?"
+          value={w.was_foreseeable == null ? "—" : w.was_foreseeable ? "Yes" : "No"}
+        />
+      </div>
+
+      {/* explanations */}
+      <div className="explanations">
+        <Explanation title="Catalyst" tag={w.headline} body={w.summary} />
+        <Explanation title="Spike explanation" body={w.spike_explanation} />
+        <Explanation
+          title="Foreseeable evidence"
+          body={
+            w.was_foreseeable
+              ? w.foreseeable_evidence || "Marked foreseeable, but no evidence recorded."
+              : w.was_foreseeable === false
+              ? "Not foreseeable from public information before the spike."
+              : null
+          }
+        />
+      </div>
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+  title,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+  title?: string;
+}) {
+  return (
+    <div className="stat" title={title}>
+      <div className="stat-label">{label}</div>
+      <div className={accent ? "stat-value accent" : "stat-value"}>{value}</div>
+    </div>
+  );
+}
+
+function Explanation({
+  title,
+  tag,
+  body,
+}: {
+  title: string;
+  tag?: string | null;
+  body: string | null;
+}) {
+  return (
+    <div className="card explanation">
+      <div className="explanation-head">
+        <span className="explanation-title">{title}</span>
+        {tag && <span className="badge">{tag}</span>}
+      </div>
+      <p className={body ? "explanation-body" : "explanation-body muted"}>
+        {body ?? "—"}
+      </p>
     </div>
   );
 }

@@ -27,6 +27,7 @@ KNOWN_JOBS = {
     "detect_winners",
     "enrich_catalysts",
     "refresh_watchlist",
+    "refresh_sectors",
     "refresh_upcoming_events",
     "weekly",
 }

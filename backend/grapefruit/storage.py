@@ -314,6 +314,36 @@ def load_asset(symbol: str) -> dict | None:
         return dict(row) if row else None
 
 
+def symbols_needing_sector(limit: int = 400) -> list[str]:
+    """Symbols that surface in the UI (winners or watchlist) but have no sector
+    yet in `assets`. Used by refresh_sectors to scope the yfinance backfill."""
+    with _cur() as cur:
+        cur.execute(
+            """
+            SELECT a.symbol
+            FROM assets a
+            WHERE (a.sector IS NULL OR a.sector = '')
+              AND a.symbol IN (
+                  SELECT symbol FROM winners
+                  UNION
+                  SELECT symbol FROM watchlist
+              )
+            ORDER BY a.symbol
+            LIMIT %s
+            """,
+            [limit],
+        )
+        return [r[0] for r in cur.fetchall()]
+
+
+def update_asset_sector(symbol: str, *, sector: str | None, industry: str | None) -> None:
+    with _cur() as cur:
+        cur.execute(
+            "UPDATE assets SET sector = %s, industry = %s WHERE symbol = %s",
+            [sector, industry, symbol],
+        )
+
+
 def symbols_with_market_cap_below(cap_usd: float) -> list[str]:
     with _cur() as cur:
         cur.execute(

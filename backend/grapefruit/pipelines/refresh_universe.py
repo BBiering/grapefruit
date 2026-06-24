@@ -36,6 +36,7 @@ def _market_cap_usd(raw_cap, fx: float) -> float | None:
 def run() -> int:
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
+    seen_isins: set[str] = set()  # dedup the same company across exchanges
 
     for exchange in eodhd_client.EXCHANGES:
         currency = eodhd_client.exchange_currency(exchange)
@@ -44,18 +45,22 @@ def run() -> int:
             log.warning("no FX rate for %s (%s); skipping exchange", exchange, currency)
             continue
 
+        # Native common stocks only (filters foreign cross-listings like
+        # 0RA9.LSE). carries name/isin/currency, which the bulk feed lacks.
+        native = eodhd_client.native_symbol_meta(exchange)
         raw = eodhd_client.fetch_bulk_extended(exchange)
         kept = 0
         for r in raw:
             code = r.get("code") or r.get("Code")
-            if not code:
+            if not code or code not in native:
                 continue
-            if (r.get("type") or r.get("Type")) != "Common Stock":
-                continue
-            # Skip class-suffixed / preferred-style tickers, matching the old
-            # US filter (e.g. "BRK-A" style codes carrying '.' or '/').
+            # Skip class-suffixed / preferred-style tickers (e.g. "BRK-A").
             if "/" in code or "." in code:
                 continue
+
+            isin = native[code].get("isin")
+            if isin and isin in seen_isins:
+                continue  # already kept this company on a prior exchange
 
             cap_usd = _market_cap_usd(
                 r.get("MarketCapitalization") or r.get("market_capitalization"), fx
@@ -63,10 +68,13 @@ def run() -> int:
             if cap_usd is None or not (MIN_MARKET_CAP_USD <= cap_usd <= MAX_MARKET_CAP_USD):
                 continue
 
+            if isin:
+                seen_isins.add(isin)
             rows.append(
                 {
                     "symbol": f"{code}.{exchange}",
-                    "name": r.get("name") or r.get("Name"),
+                    # Prefer the symbol-list name; bulk name can be terse.
+                    "name": native[code].get("name") or r.get("name") or r.get("Name"),
                     "exchange": exchange,
                     "sector": None,
                     "industry": None,
@@ -75,8 +83,8 @@ def run() -> int:
                 }
             )
             kept += 1
-        log.info("%s: %d symbols -> %d small-cap commons (fx %s=%.4f)",
-                 exchange, len(raw), kept, currency, fx)
+        log.info("%s: %d native commons, %d bulk rows -> %d small-cap (fx %s=%.4f)",
+                 exchange, len(native), len(raw), kept, currency, fx)
 
     n = storage.upsert_assets(rows)
     symbols = sorted(r["symbol"] for r in rows)
