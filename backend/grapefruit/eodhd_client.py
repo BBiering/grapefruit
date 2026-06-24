@@ -69,13 +69,24 @@ _NATIVE_CURRENCIES: dict[str, set[str]] = {
 }
 
 
+# Real venues we accept under the EODHD "US" umbrella. EODHD's US list lumps
+# ~12k OTC / pink-sheet names (Exchange in PINK, OTCQB, OTCGREY, OTCQX, OTCCE,
+# OTCMKTS, OTCBB, OTCPK) in with the real exchanges. OTC tickers are illiquid
+# and their stale/near-zero prints fabricate absurd multipliers (47000x), so we
+# keep only the proper venues. Non-US exchanges aren't subdivided this way.
+_US_REAL_EXCHANGES: set[str] = {
+    "NYSE", "NASDAQ", "AMEX", "BATS", "NYSE ARCA", "NYSE MKT", "US",
+}
+
+
 def native_symbol_meta(exchange: str) -> dict[str, dict]:
     """Map of {bare_code: {name, isin, currency}} for NATIVE common stocks on
-    `exchange` (foreign cross-listings filtered out by currency).
+    `exchange` (foreign cross-listings and US OTC/pink-sheets filtered out).
 
     Reads the exchange-symbol-list endpoint, which — unlike the bulk feed —
-    carries Currency and Isin. Used by refresh_universe to reject phantom
-    cross-listings and to dedup the same company across exchanges by ISIN.
+    carries Currency, Isin, and the real venue (Exchange). Used by
+    refresh_universe to reject phantom cross-listings + OTC names and to dedup
+    the same company across exchanges by ISIN.
     """
     native = _NATIVE_CURRENCIES.get(exchange, {_EXCHANGE_CURRENCY.get(exchange, "USD")})
     out: dict[str, dict] = {}
@@ -85,10 +96,14 @@ def native_symbol_meta(exchange: str) -> dict[str, dict]:
         code = r.get("Code")
         if not code or r.get("Currency") not in native:
             continue
+        # US: keep only real exchanges, drop OTC/pink-sheets.
+        if exchange == "US" and r.get("Exchange") not in _US_REAL_EXCHANGES:
+            continue
         out[code] = {
             "name": r.get("Name"),
             "isin": r.get("Isin"),
             "currency": r.get("Currency"),
+            "venue": r.get("Exchange"),
         }
     return out
 

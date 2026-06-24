@@ -210,11 +210,13 @@ def detect_winners(
     dates: np.ndarray,
     *,
     min_multiplier: float = 5.0,
+    max_multiplier: float = 50.0,
     max_days: int = 7,
     post_peak_retention_min: float = 0.70,
     breakout_vs_prior_high_min: float = 1.5,
     pre_trough_lookback_days: int = 180,
     post_peak_lookback_days: int = 30,
+    min_bars: int = 400,
 ) -> list[Winner]:
     """Find every (start, peak) where price rose >= `min_multiplier` in <= `max_days`
     consecutive bars, the peak then held >= `post_peak_retention_min` for
@@ -224,9 +226,17 @@ def detect_winners(
     Greedy scan: for each bar i, look back up to `max_days` bars and check the
     trough->i window. After accepting a window, skip past `i` so we don't double
     count overlapping events for the same symbol.
+
+    Data-quality guards: a symbol with fewer than `min_bars` bars trades too
+    sporadically to trust (stale prints fabricate huge ratios), and any single
+    move above `max_multiplier` is treated as a bad print rather than a real
+    move — both are skipped. A 3y daily series has ~750 bars; 400 keeps names
+    that trade most days while dropping illiquid OTC-style tickers.
     """
     n = len(closes)
     if n < 2 or len(dates) != n:
+        return []
+    if n < min_bars:
         return []
     date_objs = np.array([_to_date(d) for d in dates])
     winners: list[Winner] = []
@@ -246,6 +256,11 @@ def detect_winners(
         trough = float(closes[trough_idx])
         peak = float(closes[i])
         if trough <= 0 or peak / trough < min_multiplier:
+            i += 1
+            continue
+        # Reject implausible ratios: a >50x move in <=7 bars is a stale/erroneous
+        # price print, not a real rally.
+        if peak / trough > max_multiplier:
             i += 1
             continue
 

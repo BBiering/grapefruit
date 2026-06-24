@@ -136,7 +136,7 @@ def test_detect_winners_clean_breakout_passes():
     # 30 flat at $1, jumps 3-6-10 in 3 bars, holds at $10 for 30 days.
     closes = np.concatenate([np.full(30, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 10.0)])
     dates = _calendar_dates(len(closes))
-    winners = detect_winners("CLEAN", closes, dates)
+    winners = detect_winners("CLEAN", closes, dates, min_bars=0)
     assert len(winners) == 1
     w = winners[0]
     assert w.multiplier >= 5.0
@@ -151,7 +151,7 @@ def test_detect_winners_crash_then_recover_fails_breakout():
         [np.full(30, 10.0), np.full(20, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 10.0)]
     )
     dates = _calendar_dates(len(closes))
-    winners = detect_winners("CRASH", closes, dates)
+    winners = detect_winners("CRASH", closes, dates, min_bars=0)
     assert winners == []
 
 
@@ -159,7 +159,7 @@ def test_detect_winners_faded_post_peak_is_dropped():
     # Same jump but post-peak collapses back to $3 -> retention 0.30 < 0.70.
     closes = np.concatenate([np.full(30, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 3.0)])
     dates = _calendar_dates(len(closes))
-    winners = detect_winners("FADED", closes, dates)
+    winners = detect_winners("FADED", closes, dates, min_bars=0)
     assert winners == []
 
 
@@ -167,5 +167,24 @@ def test_detect_winners_gradual_rise_fails_max_days():
     # 1 -> 10 over 90 days; max_days=7 means no single 7-bar window achieves 5x.
     closes = np.linspace(1.0, 10.0, 90)
     dates = _calendar_dates(90)
-    winners = detect_winners("SLOW", closes, dates)
+    winners = detect_winners("SLOW", closes, dates, min_bars=0)
     assert winners == []
+
+
+def test_detect_winners_too_few_bars_skipped():
+    # A clean breakout, but the series is too short to trust (illiquid ticker).
+    closes = np.concatenate([np.full(30, 1.0), np.array([3.0, 6.0, 10.0]), np.full(30, 10.0)])
+    dates = _calendar_dates(len(closes))
+    assert detect_winners("ILLIQUID", closes, dates, min_bars=400) == []
+    # Same data passes once the liquidity guard is relaxed.
+    assert len(detect_winners("ILLIQUID", closes, dates, min_bars=0)) == 1
+
+
+def test_detect_winners_implausible_multiplier_skipped():
+    # A single ~71x overnight jump is a stale/erroneous print, not a real rally.
+    # (One bar, so the only detectable move is the full 1 -> 71 ratio.)
+    closes = np.concatenate([np.full(30, 1.0), np.array([71.0]), np.full(30, 71.0)])
+    dates = _calendar_dates(len(closes))
+    assert detect_winners("BADPRINT", closes, dates, min_bars=0) == []
+    # With the cap lifted, the logic would otherwise accept it.
+    assert len(detect_winners("BADPRINT", closes, dates, min_bars=0, max_multiplier=1e9)) == 1
