@@ -1,10 +1,22 @@
 # 🍊 Grapefruit
 
-Steep-rise stock detector. Scans the active US universe weekly for tickers that
-**rose at least 5x in under a week and held the new level**, then asks Perplexity
-why it happened and whether it was foreseeable from public information beforehand.
-A second view tracks small-cap candidates with upcoming earnings as potential
-future winners. **Not financial advice.**
+Two-sided equity research tool. **Not financial advice.**
+
+- **Future winners (the default view)** — a weekly quantitative screener narrows
+  the US + EU universe to liquid small/mid-caps (USD price $1–$50, &gt; $1M daily
+  dollar-volume), ranks them by 180-day momentum + a fundamentals/insider quality
+  tilt, then uses Perplexity `sonar-pro` to surface **imminent forward-looking
+  catalysts** (FDA PDUFA dates, Phase 2/3 readouts, spin-offs, guidance-relevant
+  earnings) in the next 1–90 days.
+- **Past winners** — detects tickers that **rose ≥ 5x in under a week and held
+  the new level**, then asks Perplexity why it happened and whether it was
+  foreseeable beforehand.
+
+> **EODHD tier note:** the quality/insider dimension of the screener uses EODHD's
+> per-symbol `/fundamentals` and `/insider-transactions` endpoints, which are paid
+> add-ons. When they're not on your plan they return 403 and those score
+> components fall back to neutral — the screener still ranks on liquidity +
+> momentum. The forward-catalyst scan (Perplexity) is unaffected.
 
 ## ⚠️ Survivorship bias
 
@@ -49,8 +61,9 @@ python -m grapefruit.pipelines refresh_fundamentals
 python -m grapefruit.pipelines refresh_bars
 python -m grapefruit.pipelines detect_winners
 python -m grapefruit.pipelines enrich_catalysts
-python -m grapefruit.pipelines refresh_watchlist
+python -m grapefruit.pipelines refresh_watchlist        # the quant screener
 python -m grapefruit.pipelines refresh_upcoming_events
+python -m grapefruit.pipelines scan_forward_catalysts   # sonar-pro forward scan
 
 # Or run the full pipeline in order:
 python -m grapefruit.pipelines weekly

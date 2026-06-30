@@ -52,6 +52,7 @@ JOB_NAMES = [
     "enrich_catalysts",
     "refresh_watchlist",
     "refresh_upcoming_events",
+    "scan_forward_catalysts",
     "weekly",
 ]
 

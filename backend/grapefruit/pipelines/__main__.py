@@ -29,6 +29,7 @@ KNOWN_JOBS = {
     "refresh_watchlist",
     "refresh_sectors",
     "refresh_upcoming_events",
+    "scan_forward_catalysts",
     "weekly",
 }
 

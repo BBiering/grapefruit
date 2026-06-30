@@ -27,8 +27,96 @@ log = logging.getLogger(__name__)
 
 _PPLX_URL = "https://api.perplexity.ai/chat/completions"
 _MODEL = "sonar"
+_FORWARD_MODEL = "sonar-pro"  # stronger web reasoning for the look-ahead scan
 _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
+
+
+def forward_catalyst(symbol: str, name: str | None, price: float | None) -> dict:
+    """Scan the live web for an IMMINENT (next 1–90 days) forward-looking catalyst
+    for `symbol`, using sonar-pro with native JSON mode.
+
+    Returns {detected, event_name, impact_type, expected_window, strategic_summary,
+    source_url, model, error?}. Never raises — errors are returned in `error`.
+    """
+    base = {
+        "symbol": symbol,
+        "detected": False,
+        "event_name": None,
+        "impact_type": None,
+        "expected_window": None,
+        "strategic_summary": None,
+        "source_url": None,
+        "model": _FORWARD_MODEL,
+    }
+    if not settings.perplexity_api_key:
+        return {**base, "error": "no_key"}
+
+    label = f"{symbol} ({name})" if name else symbol
+    price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
+    user_msg = (
+        "You are an institutional research analyst hunting for forward-looking, "
+        "high-impact stock catalysts. Analyze the live web, SEC EDGAR filings "
+        "(especially recent 8-Ks), corporate calendars, and bio/tech registries "
+        f"for the ticker '{label}' (currently around {price_str}).\n\n"
+        "Identify a SCHEDULED or highly anticipated FUTURE event in the next 1 to "
+        "90 days that could cause a large structural re-pricing (e.g. Phase 2/3 "
+        "trial data readouts, FDA PDUFA decision dates, scheduled spin-offs, "
+        "earnings dates with expected guidance changes, pending regulatory "
+        "approvals, or major contract decisions). Ignore old news unless it sets "
+        "up an imminent future event.\n\n"
+        "Return a JSON object with exactly these keys:\n"
+        "{\n"
+        '  "imminent_future_catalyst_detected": true or false,\n'
+        '  "catalyst_event_name": "name of the specific future event, or empty",\n'
+        '  "expected_date_window": "YYYY-MM-DD or a short timeframe, or empty",\n'
+        '  "catalyst_impact_type": "Binary FDA | Earnings | Spin-off | Contract | Regulatory | Other",\n'
+        '  "strategic_summary": "1-2 sentences on exactly what is dropping and why it could reprice the stock",\n'
+        '  "verified_source_url": "the exact live URL referencing this upcoming event, or empty"\n'
+        "}"
+    )
+    payload = {
+        "model": _FORWARD_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise financial data extraction engine. You speak "
+                    "exclusively in structured JSON objects."
+                ),
+            },
+            {"role": "user", "content": user_msg},
+        ],
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.perplexity_api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = _post_with_retry(headers, payload, symbol)
+        if resp is None:
+            return {**base, "error": "rate_limited"}
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        parsed = _parse_json_response(raw)
+        if not parsed:
+            return {**base, "error": "unparseable"}
+        return {
+            **base,
+            "detected": bool(parsed.get("imminent_future_catalyst_detected")),
+            "event_name": (parsed.get("catalyst_event_name") or "").strip() or None,
+            "impact_type": (parsed.get("catalyst_impact_type") or "").strip() or None,
+            "expected_window": (parsed.get("expected_date_window") or "").strip() or None,
+            "strategic_summary": (parsed.get("strategic_summary") or "").strip() or None,
+            "source_url": (parsed.get("verified_source_url") or "").strip() or None,
+        }
+    except httpx.HTTPStatusError as exc:
+        log.warning("perplexity forward %s returned %s", symbol, exc.response.status_code)
+        return {**base, "error": f"http_{exc.response.status_code}"}
+    except Exception as exc:  # noqa: BLE001
+        log.warning("perplexity forward fetch failed for %s: %s", symbol, redact(str(exc)))
+        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
 
 
 def explain_move(
