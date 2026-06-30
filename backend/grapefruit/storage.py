@@ -143,6 +143,28 @@ def init_db() -> None:
             )
             """
         )
+        # Look-ahead screener score columns (see migration 0003_lookahead.sql).
+        for col in (
+            "dollar_volume", "momentum_180d", "momentum_score", "quality_score",
+            "insider_score", "combined_score", "net_income", "profit_margin",
+        ):
+            cur.execute(f"ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS {col} DOUBLE PRECISION")
+        cur.execute("ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS rank INTEGER")
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS forward_catalysts (
+                symbol TEXT PRIMARY KEY,
+                detected BOOLEAN,
+                event_name TEXT,
+                impact_type TEXT,
+                expected_window TEXT,
+                strategic_summary TEXT,
+                source_url TEXT,
+                model TEXT,
+                scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS upcoming_events (
@@ -194,6 +216,10 @@ def init_db() -> None:
                 END IF;
                 IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'watchlist_symbol_fkey') THEN
                     ALTER TABLE watchlist ADD CONSTRAINT watchlist_symbol_fkey
+                        FOREIGN KEY (symbol) REFERENCES assets(symbol) ON DELETE CASCADE;
+                END IF;
+                IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'forward_catalysts_symbol_fkey') THEN
+                    ALTER TABLE forward_catalysts ADD CONSTRAINT forward_catalysts_symbol_fkey
                         FOREIGN KEY (symbol) REFERENCES assets(symbol) ON DELETE CASCADE;
                 END IF;
             END $$;
@@ -254,6 +280,47 @@ def symbols_with_bars() -> list[str]:
     with _cur() as cur:
         cur.execute("SELECT DISTINCT symbol FROM bars ORDER BY symbol")
         return [r[0] for r in cur.fetchall()]
+
+
+def momentum_180d_all(min_bars: int = 60) -> dict[str, float]:
+    """{symbol: 180-day % change} computed in one query for every symbol with
+    enough history. Momentum is a price ratio, so it's currency-independent.
+
+    Baseline = the first close on or after (latest_ts - 180 days). Symbols with
+    fewer than `min_bars` total bars are excluded (illiquid / too-new)."""
+    with _cur() as cur:
+        cur.execute(
+            """
+            WITH bounds AS (
+                SELECT symbol, MAX(ts) AS last_ts, COUNT(*) AS n
+                FROM bars GROUP BY symbol HAVING COUNT(*) >= %s
+            ),
+            last_close AS (
+                SELECT b.symbol, b.close AS last_close
+                FROM bars b JOIN bounds bo ON bo.symbol = b.symbol AND bo.last_ts = b.ts
+            ),
+            base AS (
+                SELECT DISTINCT ON (b.symbol) b.symbol, b.close AS base_close
+                FROM bars b JOIN bounds bo ON bo.symbol = b.symbol
+                WHERE b.ts >= bo.last_ts - INTERVAL '180 days'
+                ORDER BY b.symbol, b.ts ASC
+            )
+            SELECT l.symbol, l.last_close / ba.base_close - 1.0 AS momentum
+            FROM last_close l JOIN base ba ON ba.symbol = l.symbol
+            WHERE ba.base_close > 0
+            """,
+            [min_bars],
+        )
+        return {r[0]: float(r[1]) for r in cur.fetchall()}
+
+
+def load_assets_map() -> dict[str, dict]:
+    """All assets keyed by symbol: {symbol: {name, exchange, sector, industry, market_cap_usd}}."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            "SELECT symbol, name, exchange, sector, industry, market_cap_usd FROM assets"
+        )
+        return {r["symbol"]: dict(r) for r in cur.fetchall()}
 
 
 # ---------------------------------------------------------------------------
@@ -545,23 +612,63 @@ def upsert_watchlist_rows(rows: list[dict]) -> int:
     return len(payload)
 
 
+_WATCHLIST_COLS = (
+    "symbol", "last_close", "market_cap_usd", "sector", "industry", "why_listed",
+    "dollar_volume", "momentum_180d", "momentum_score", "quality_score",
+    "insider_score", "combined_score", "net_income", "profit_margin", "rank",
+)
+
+
 def replace_watchlist(rows: list[dict]) -> int:
     """Atomically replace the entire watchlist with `rows`."""
-    cols = ("symbol", "last_close", "market_cap_usd", "sector", "industry", "why_listed")
-    payload = [tuple(r.get(c) for c in cols) for r in rows]
+    payload = [tuple(r.get(c) for c in _WATCHLIST_COLS) for r in rows]
+    placeholders = ", ".join(["%s"] * len(_WATCHLIST_COLS))
+    collist = ", ".join(_WATCHLIST_COLS)
     with _conn() as con:
         with con.cursor() as cur:
             cur.execute("DELETE FROM watchlist")
             if payload:
                 cur.executemany(
-                    """
-                    INSERT INTO watchlist
-                        (symbol, last_close, market_cap_usd, sector, industry, why_listed)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                    """,
+                    f"INSERT INTO watchlist ({collist}) VALUES ({placeholders})",
                     payload,
                 )
     return len(payload)
+
+
+_FORWARD_CATALYST_COLS = (
+    "symbol", "detected", "event_name", "impact_type", "expected_window",
+    "strategic_summary", "source_url", "model",
+)
+
+
+def replace_forward_catalysts(rows: list[dict]) -> int:
+    """Atomically replace forward_catalysts with `rows` (one per symbol)."""
+    payload = [tuple(r.get(c) for c in _FORWARD_CATALYST_COLS) for r in rows]
+    placeholders = ", ".join(["%s"] * len(_FORWARD_CATALYST_COLS))
+    collist = ", ".join(_FORWARD_CATALYST_COLS)
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.execute("DELETE FROM forward_catalysts")
+            if payload:
+                cur.executemany(
+                    f"INSERT INTO forward_catalysts ({collist}) VALUES ({placeholders})",
+                    payload,
+                )
+    return len(payload)
+
+
+def watchlist_symbols() -> list[dict]:
+    """Current watchlist rows the forward scan needs: symbol, last_close, name."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT w.symbol, w.last_close, a.name
+            FROM watchlist w
+            LEFT JOIN assets a ON a.symbol = w.symbol
+            ORDER BY w.combined_score DESC NULLS LAST
+            """
+        )
+        return [dict(r) for r in cur.fetchall()]
 
 
 # ---------------------------------------------------------------------------

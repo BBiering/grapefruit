@@ -11,7 +11,7 @@ const qc = new QueryClient({
 type Tab = "past" | "future";
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("past");
+  const [tab, setTab] = useState<Tab>("future");
 
   return (
     <QueryClientProvider client={qc}>
@@ -23,16 +23,16 @@ export default function App() {
           </div>
           <nav className="nav">
             <button
-              className={tab === "past" ? "navbtn active" : "navbtn"}
-              onClick={() => setTab("past")}
-            >
-              Past winners
-            </button>
-            <button
               className={tab === "future" ? "navbtn active" : "navbtn"}
               onClick={() => setTab("future")}
             >
               Future winners
+            </button>
+            <button
+              className={tab === "past" ? "navbtn active" : "navbtn"}
+              onClick={() => setTab("past")}
+            >
+              Past winners
             </button>
           </nav>
         </div>

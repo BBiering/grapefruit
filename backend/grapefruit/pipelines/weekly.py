@@ -17,6 +17,7 @@ from grapefruit.pipelines import (
     refresh_universe,
     refresh_upcoming_events,
     refresh_watchlist,
+    scan_forward_catalysts,
 )
 
 
@@ -35,6 +36,7 @@ def run() -> int:
         refresh_sectors,   # after winners/watchlist exist, so it scopes to them
         enrich_catalysts,
         refresh_upcoming_events,
+        scan_forward_catalysts,  # after watchlist exists
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)

@@ -228,6 +228,42 @@ def fetch_news(symbol: str, start: date, end: date, limit: int = 50) -> list[dic
     return data if isinstance(data, list) else []
 
 
+def fetch_fundamentals(symbol: str) -> dict | None:
+    """Per-symbol fundamentals (`/fundamentals/{symbol}`). Returns the parsed
+    JSON dict, or None if the endpoint is gated on the current plan (403) or the
+    symbol has no data. `symbol` is a full EODHD ticker, e.g. "AAPL.US".
+
+    NOTE: on the current EODHD tier this endpoint is typically NOT available and
+    returns 403 (handled by `_get`, which yields None). The screener treats a
+    None result as 'no quality signal' and falls back to a neutral score.
+    """
+    data = _get(f"fundamentals/{symbol}")
+    return data if isinstance(data, dict) else None
+
+
+def fundamentals_highlights(fundamentals: dict | None) -> tuple[float | None, float | None]:
+    """Extract (net_income_ttm, profit_margin) from a /fundamentals payload.
+
+    Returns (None, None) when the payload is missing or lacks the Highlights
+    block. profit_margin is a fraction (0.15 == 15%)."""
+    if not fundamentals:
+        return None, None
+    hi = fundamentals.get("Highlights") or {}
+    ni = hi.get("NetIncomeTTM") if isinstance(hi.get("NetIncomeTTM"), (int, float)) else None
+    pm = hi.get("ProfitMargin") if isinstance(hi.get("ProfitMargin"), (int, float)) else None
+    return (float(ni) if ni is not None else None, float(pm) if pm is not None else None)
+
+
+def fetch_insider_transactions(symbol: str, limit: int = 100) -> list[dict]:
+    """SEC Form 4 insider transactions for `symbol` (`/insider-transactions`).
+
+    Returns [] if the endpoint is gated on the current plan (403) or there's no
+    data. `symbol` is a full EODHD ticker, e.g. "AAPL.US".
+    """
+    data = _get("insider-transactions", {"code": symbol, "limit": limit})
+    return data if isinstance(data, list) else []
+
+
 def fetch_earnings_calendar(start: date, end: date, symbols: list[str] | None = None) -> list[dict]:
     """Upcoming earnings dates in [start, end] for US tickers.
 
