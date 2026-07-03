@@ -217,6 +217,7 @@ def detect_winners(
     pre_trough_lookback_days: int = 180,
     post_peak_lookback_days: int = 30,
     min_bars: int = 400,
+    max_trough_price: float = 50.0,
 ) -> list[Winner]:
     """Find every (start, peak) where price rose >= `min_multiplier` in <= `max_days`
     consecutive bars, the peak then held >= `post_peak_retention_min` for
@@ -232,6 +233,10 @@ def detect_winners(
     move above `max_multiplier` is treated as a bad print rather than a real
     move — both are skipped. A 3y daily series has ~750 bars; 400 keeps names
     that trade most days while dropping illiquid OTC-style tickers.
+
+    Retail-accessibility: only show moves that started <=$max_trough_price
+    (default $50). A winner that surged $12 -> $65 is kept (started <$50), but
+    one that rose $60 -> $100 is dropped (expensive entry point).
     """
     n = len(closes)
     if n < 2 or len(dates) != n:
@@ -261,6 +266,10 @@ def detect_winners(
         # Reject implausible ratios: a >50x move in <=7 bars is a stale/erroneous
         # price print, not a real rally.
         if peak / trough > max_multiplier:
+            i += 1
+            continue
+        # Retail-accessible: only show moves that started at a price <=$50.
+        if trough > max_trough_price:
             i += 1
             continue
 

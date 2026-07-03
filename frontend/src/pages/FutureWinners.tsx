@@ -121,7 +121,7 @@ export default function FutureWinners() {
     <div>
       <div className="card">
         <span className="muted">
-          Liquid small/mid-caps (USD price $1–$50, &gt; $1M daily dollar-volume),
+          US small/mid-caps ($300M–$10B market cap, under $50 price, ≥50k avg daily volume),
           ranked by 180-day momentum + quality, with imminent forward catalysts
           surfaced by Perplexity. Not financial advice.
         </span>

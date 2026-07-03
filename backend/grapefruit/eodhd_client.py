@@ -26,10 +26,10 @@ _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 _TIMEOUT = 30.0
 
-# Exchanges that make up the universe. EODHD has no unified "EU" exchange, so
-# Europe is enumerated per-country. The symbol stored everywhere is the full
-# EODHD ticker ("BMW.XETRA"), which is globally unique across these.
-EXCHANGES: list[str] = ["US", "LSE", "XETRA", "PA", "ST", "CO", "HE", "OL"]
+# Exchanges that make up the universe. Focus is US small-caps; European
+# exchanges are excluded (user decision to concentrate on US retail-accessible
+# names). The symbol stored everywhere is the full EODHD ticker (e.g. "DRUG.US").
+EXCHANGES: list[str] = ["US"]
 
 # Reporting currency of each exchange's MarketCapitalization / prices. Used to
 # convert market cap to USD for the small-cap filter. LSE quotes in pence (GBX),
