@@ -26,13 +26,13 @@ export default function App() {
               className={tab === "future" ? "navbtn active" : "navbtn"}
               onClick={() => setTab("future")}
             >
-              Future winners
+              🚀 Potential Champions
             </button>
             <button
               className={tab === "past" ? "navbtn active" : "navbtn"}
               onClick={() => setTab("past")}
             >
-              Past winners
+              🏆 Past Champions
             </button>
           </nav>
         </div>

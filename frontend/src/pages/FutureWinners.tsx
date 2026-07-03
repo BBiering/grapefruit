@@ -1,7 +1,17 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import {
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ReferenceDot,
+  CartesianGrid,
+} from "recharts";
 import { supabase } from "../supabase";
-import type { ForwardCatalyst, WatchlistRow } from "../types";
+import type { ForwardCatalyst, WatchlistRow, Bar } from "../types";
 
 function formatMoney(usd: number | null) {
   if (usd == null) return <span className="muted">—</span>;
@@ -19,6 +29,11 @@ function formatPct(frac: number | null) {
 function formatScore(s: number | null) {
   if (s == null) return <span className="muted">—</span>;
   return s.toFixed(0);
+}
+
+// Strip .US suffix from symbols
+function displaySymbol(symbol: string) {
+  return symbol.includes(".") ? symbol.slice(0, symbol.lastIndexOf(".")) : symbol;
 }
 
 interface RawWatchlist {
@@ -93,120 +108,244 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
   });
 }
 
+async function fetchBars(symbol: string): Promise<Bar[]> {
+  const twoYearsAgo = new Date();
+  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const cutoff = twoYearsAgo.toISOString().slice(0, 10);
+
+  const { data, error } = await supabase
+    .from("bars")
+    .select("ts, close")
+    .eq("symbol", symbol)
+    .gte("ts", cutoff)
+    .order("ts", { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as Bar[];
+}
+
 export default function FutureWinners() {
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
+
   const q = useQuery({ queryKey: ["future-winners"], queryFn: fetchFutureWinners });
 
-  const { alerts, watchlist } = useMemo(() => {
-    const rows = q.data ?? [];
-    const alerts = rows
-      .filter((r) => r.catalyst?.detected)
-      .sort((a, b) => (b.combined_score ?? 0) - (a.combined_score ?? 0));
-    const watchlist = rows
-      .filter((r) => !r.catalyst?.detected)
-      .sort((a, b) => (b.combined_score ?? 0) - (a.combined_score ?? 0));
-    return { alerts, watchlist };
+  const rows = useMemo(() => {
+    return (q.data ?? []).sort((a, b) => (b.combined_score ?? 0) - (a.combined_score ?? 0));
   }, [q.data]);
 
-  if (q.isLoading) return <div className="muted">Loading look-ahead report…</div>;
+  const selected = useMemo(
+    () => (selectedSymbol ? rows.find((r) => r.symbol === selectedSymbol) ?? null : null),
+    [rows, selectedSymbol],
+  );
+
+  if (q.isLoading) return <div className="muted">Loading potential champions…</div>;
   if (q.error) {
     return (
       <div className="card warn">
-        <strong>Failed to load the look-ahead report.</strong>
+        <strong>Failed to load potential champions.</strong>
         <div className="muted">{(q.error as Error).message}</div>
       </div>
     );
   }
 
   return (
-    <div>
-      <div className="card">
-        <span className="muted">
-          US small/mid-caps ($300M–$10B market cap, under $50 price, ≥50k avg daily volume),
-          ranked by 180-day momentum + quality, with imminent forward catalysts
-          surfaced by Perplexity. Not financial advice.
-        </span>
+    <div className="future-layout">
+      <div className="future-cards">
+        {rows.map((r) => (
+          <div
+            key={r.symbol}
+            className={`future-card ${selected?.symbol === r.symbol ? "active" : ""}`}
+            onClick={() => setSelectedSymbol(r.symbol)}
+          >
+            <div className="fc-header">
+              <div>
+                <div className="fc-symbol">{displaySymbol(r.symbol)}</div>
+                <div className="fc-name">{r.name ?? "—"}</div>
+              </div>
+              <div className="fc-price">
+                {r.last_close != null ? `$${r.last_close.toFixed(2)}` : "—"}
+              </div>
+            </div>
+
+            <div className="fc-meta">
+              <span className="muted">{r.industry ?? r.sector ?? "—"}</span>
+              <span className="muted">{formatMoney(r.market_cap_usd)}</span>
+            </div>
+
+            <div className="fc-strategies">
+              <Strategy
+                label="Momentum"
+                active={r.momentum_score != null && r.momentum_score >= 70}
+                value={formatScore(r.momentum_score)}
+              />
+              <Strategy
+                label="Catalyst"
+                active={r.catalyst?.detected === true}
+                value={r.catalyst?.expected_window ?? "—"}
+              />
+              <Strategy
+                label="Quality"
+                active={r.quality_score != null && r.quality_score >= 70}
+                value={formatScore(r.quality_score)}
+              />
+            </div>
+          </div>
+        ))}
       </div>
 
-      <h2>🚨 Active catalyst alerts</h2>
-      {alerts.length === 0 ? (
-        <div className="card muted">
-          No imminent catalysts detected in the current pool. Run the
-          <code> scan_forward_catalysts </code> job, or check the watchlist below.
+      {selected && (
+        <div className="future-detail">
+          <DetailPane row={selected} />
         </div>
-      ) : (
-        alerts.map((r) => (
-          <div className="card" key={r.symbol}>
-            <div className="row" style={{ justifyContent: "space-between", flexWrap: "wrap" }}>
-              <strong style={{ fontSize: "1.1rem" }}>
-                {r.symbol} {r.name ? <span className="muted">· {r.name}</span> : null}
-              </strong>
-              <span>
-                {r.last_close != null ? `$${r.last_close.toFixed(2)}` : "—"} ·{" "}
-                momentum {formatPct(r.momentum_180d)} · score {formatScore(r.combined_score)}
-              </span>
-            </div>
-            <div style={{ marginTop: "0.4rem" }}>
-              <strong>{r.catalyst?.impact_type ?? "Catalyst"}</strong>
-              {r.catalyst?.expected_window ? ` · ${r.catalyst.expected_window}` : ""}
-              {r.catalyst?.event_name ? ` · ${r.catalyst.event_name}` : ""}
-            </div>
-            {r.catalyst?.strategic_summary && (
-              <div style={{ marginTop: "0.25rem" }}>{r.catalyst.strategic_summary}</div>
-            )}
-            {r.catalyst?.source_url && (
-              <div style={{ marginTop: "0.25rem" }}>
-                <a href={r.catalyst.source_url} target="_blank" rel="noreferrer">
-                  source ↗
-                </a>
-              </div>
+      )}
+    </div>
+  );
+}
+
+function Strategy({ label, active, value }: { label: string; active: boolean; value: string | JSX.Element }) {
+  return (
+    <div className="strategy">
+      <div className={`strategy-light ${active ? "active" : ""}`} />
+      <div className="strategy-content">
+        <div className="strategy-label">{label}</div>
+        <div className="strategy-value">{value}</div>
+      </div>
+    </div>
+  );
+}
+
+function DetailPane({ row }: { row: WatchlistRow }) {
+  const bq = useQuery({
+    queryKey: ["bars-2y", row.symbol],
+    queryFn: () => fetchBars(row.symbol),
+    staleTime: 5 * 60_000,
+  });
+
+  const series = useMemo(
+    () => (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close })),
+    [bq.data],
+  );
+
+  // Find the catalyst date point if it exists
+  const catalystPoint = useMemo(() => {
+    if (!row.next_event_ts || !series.length) return null;
+    const eventDate = row.next_event_ts.slice(0, 10);
+    return series.find((p) => p.ts === eventDate);
+  }, [row.next_event_ts, series]);
+
+  return (
+    <div>
+      <div className="detail-head">
+        <div>
+          <h2 className="detail-title">{displaySymbol(row.symbol)}</h2>
+          <div className="muted">{row.name ?? "—"}</div>
+        </div>
+        <div className="detail-badges">
+          {row.sector && <span className="badge">{row.sector}</span>}
+          {row.industry && <span className="badge subtle">{row.industry}</span>}
+        </div>
+      </div>
+
+      {/* chart */}
+      <div className="card chart-card">
+        {bq.isLoading ? (
+          <div className="muted chart-empty">Loading price history…</div>
+        ) : series.length < 2 ? (
+          <div className="muted chart-empty">No price history available.</div>
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={series} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
+              <CartesianGrid stroke="rgba(28,26,24,0.06)" vertical={false} />
+              <XAxis
+                dataKey="ts"
+                tick={{ fontSize: 11, fill: "#6b6661" }}
+                minTickGap={60}
+                tickFormatter={(t) => String(t).slice(0, 7)}
+              />
+              <YAxis
+                tick={{ fontSize: 11, fill: "#6b6661" }}
+                width={48}
+                domain={["auto", "auto"]}
+              />
+              <Tooltip
+                formatter={(v: number) => [v.toFixed(2), "Close"]}
+                labelStyle={{ color: "#1c1a18" }}
+                contentStyle={{ borderRadius: 10, border: "1px solid rgba(28,26,24,0.1)" }}
+              />
+              <Line
+                type="monotone"
+                dataKey="close"
+                stroke="#e8664f"
+                strokeWidth={2}
+                dot={false}
+              />
+              {catalystPoint && (
+                <ReferenceDot x={catalystPoint.ts} y={catalystPoint.close} r={5} fill="#4c9aff" stroke="#fff" />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+
+      {/* stats */}
+      <div className="stats-grid">
+        <Stat label="Price" value={row.last_close != null ? `$${row.last_close.toFixed(2)}` : "—"} />
+        <Stat label="Market cap" value={formatMoney(row.market_cap_usd)} />
+        <Stat label="Momentum 180d" value={formatPct(row.momentum_180d)} />
+        <Stat label="Momentum score" value={formatScore(row.momentum_score)} />
+        <Stat label="Quality score" value={formatScore(row.quality_score)} />
+        <Stat label="Combined score" value={formatScore(row.combined_score)} accent />
+      </div>
+
+      {/* catalyst */}
+      {row.catalyst?.detected && (
+        <div className="card explanation">
+          <div className="explanation-head">
+            <span className="explanation-title">Catalyst</span>
+            {row.catalyst.impact_type && <span className="badge">{row.catalyst.impact_type}</span>}
+          </div>
+          <div className="explanation-body">
+            {row.catalyst.event_name && <strong>{row.catalyst.event_name}</strong>}
+            {row.catalyst.expected_window && <div className="muted">{row.catalyst.expected_window}</div>}
+            {row.catalyst.strategic_summary && <p>{row.catalyst.strategic_summary}</p>}
+            {row.catalyst.source_url && (
+              <a href={row.catalyst.source_url} target="_blank" rel="noreferrer">
+                source ↗
+              </a>
             )}
           </div>
-        ))
+        </div>
       )}
 
-      <h2 style={{ marginTop: "1.5rem" }}>📋 Structural watchlist</h2>
-      <div className="card muted" style={{ marginBottom: "0.75rem" }}>
-        {watchlist.length} names with strong momentum but no imminent binary
-        catalyst found in the 90-day window. Keep on radar.
-      </div>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Symbol</th>
-            <th>Name</th>
-            <th>Industry</th>
-            <th>Price</th>
-            <th>Mkt cap</th>
-            <th>Momentum</th>
-            <th>Quality</th>
-            <th>Score</th>
-            <th>Next earnings</th>
-          </tr>
-        </thead>
-        <tbody>
-          {watchlist.map((r) => (
-            <tr key={r.symbol}>
-              <td>{r.rank ?? "—"}</td>
-              <td><strong>{r.symbol}</strong></td>
-              <td>{r.name ?? <span className="muted">—</span>}</td>
-              <td>{r.industry ?? <span className="muted">—</span>}</td>
-              <td>{r.last_close != null ? `$${r.last_close.toFixed(2)}` : "—"}</td>
-              <td>{formatMoney(r.market_cap_usd)}</td>
-              <td>{formatPct(r.momentum_180d)}</td>
-              <td>{formatScore(r.quality_score)}</td>
-              <td>{formatScore(r.combined_score)}</td>
-              <td>
-                {r.next_event_ts ? (
-                  <span>{r.next_event_ts}{r.next_event_type ? ` · ${r.next_event_type}` : ""}</span>
-                ) : (
-                  <span className="muted">—</span>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {row.next_event_ts && (
+        <div className="card explanation">
+          <div className="explanation-head">
+            <span className="explanation-title">Next earnings</span>
+            {row.next_event_type && <span className="badge">{row.next_event_type}</span>}
+          </div>
+          <div className="explanation-body">
+            <strong>{row.next_event_ts}</strong>
+            {row.next_event_title && <p className="muted">{row.next_event_title}</p>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Stat({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: string | JSX.Element;
+  accent?: boolean;
+}) {
+  const cls = accent ? "stat-value accent" : "stat-value";
+  return (
+    <div className="stat">
+      <div className="stat-label">{label}</div>
+      <div className={cls}>{value}</div>
     </div>
   );
 }

@@ -84,47 +84,17 @@ async function fetchBars(symbol: string): Promise<Bar[]> {
   return (data ?? []) as Bar[];
 }
 
-type SortKey = "multiplier" | "market_cap" | "recent";
-
 export default function PastWinners() {
-  const [minMult, setMinMult] = useState(5);
-  const [sector, setSector] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [maxCap, setMaxCap] = useState<number>(0); // 0 = no cap filter
-  const [sortKey, setSortKey] = useState<SortKey>("multiplier");
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
   const q = useQuery({ queryKey: ["winners"], queryFn: fetchWinners });
 
-  const sectors = useMemo(() => {
-    const set = new Set<string>();
-    (q.data ?? []).forEach((w) => w.sector && set.add(w.sector));
-    return [...set].sort();
-  }, [q.data]);
-
-  const industries = useMemo(() => {
-    const set = new Set<string>();
-    (q.data ?? [])
-      .filter((w) => !sector || w.sector === sector)
-      .forEach((w) => w.industry && set.add(w.industry));
-    return [...set].sort();
-  }, [q.data, sector]);
-
   const rows = useMemo(() => {
-    let r = q.data ?? [];
-    if (minMult) r = r.filter((w) => w.multiplier >= minMult);
-    if (sector) r = r.filter((w) => w.sector === sector);
-    if (industry) r = r.filter((w) => w.industry === industry);
-    if (maxCap) r = r.filter((w) => (w.market_cap_usd_at_peak ?? 0) <= maxCap);
+    const r = q.data ?? [];
     const sorted = [...r];
-    sorted.sort((a, b) => {
-      if (sortKey === "multiplier") return b.multiplier - a.multiplier;
-      if (sortKey === "market_cap")
-        return (b.market_cap_usd_at_peak ?? 0) - (a.market_cap_usd_at_peak ?? 0);
-      return b.end_ts.localeCompare(a.end_ts); // recent
-    });
+    sorted.sort((a, b) => b.multiplier - a.multiplier);
     return sorted;
-  }, [q.data, minMult, sector, industry, maxCap, sortKey]);
+  }, [q.data]);
 
   // Keep a valid selection as filters change.
   useEffect(() => {
@@ -152,65 +122,9 @@ export default function PastWinners() {
 
   return (
     <div className="winners-layout">
-      {/* ---- left: filters + list ---- */}
+      {/* ---- left: list ---- */}
       <aside className="winners-list">
-        <div className="filters">
-          <label>
-            Sort
-            <select value={sortKey} onChange={(e) => setSortKey(e.target.value as SortKey)}>
-              <option value="multiplier">Multiplier</option>
-              <option value="market_cap">Market cap</option>
-              <option value="recent">Most recent</option>
-            </select>
-          </label>
-          <label>
-            Min multiplier
-            <input
-              type="number"
-              min={1}
-              step={0.5}
-              value={minMult}
-              onChange={(e) => setMinMult(Number(e.target.value))}
-            />
-          </label>
-          <label>
-            Sector
-            <select
-              value={sector}
-              onChange={(e) => {
-                setSector(e.target.value);
-                setIndustry("");
-              }}
-            >
-              <option value="">All</option>
-              {sectors.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Industry
-            <select value={industry} onChange={(e) => setIndustry(e.target.value)}>
-              <option value="">All</option>
-              {industries.map((i) => (
-                <option key={i} value={i}>{i}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            Max market cap
-            <select value={maxCap} onChange={(e) => setMaxCap(Number(e.target.value))}>
-              <option value={0}>Any</option>
-              <option value={500e6}>≤ $500M</option>
-              <option value={1e9}>≤ $1B</option>
-              <option value={2e9}>≤ $2B</option>
-              <option value={5e9}>≤ $5B</option>
-              <option value={10e9}>≤ $10B</option>
-            </select>
-          </label>
-        </div>
-
-        <div className="muted list-count">{rows.length} winners</div>
+        <div className="muted list-count">{rows.length} champions</div>
         <ul className="winner-items">
           {rows.map((w) => (
             <li
@@ -226,6 +140,11 @@ export default function PastWinners() {
               <div className="wi-meta muted">
                 {w.industry ?? w.sector ?? "—"} · {formatMoney(w.market_cap_usd_at_peak)}
               </div>
+              {w.was_foreseeable != null && (
+                <div className={`wi-flag ${w.was_foreseeable ? "foreseeable-yes" : "foreseeable-no"}`}>
+                  {w.was_foreseeable ? "✓ Foreseeable" : "✗ Not foreseeable"}
+                </div>
+              )}
             </li>
           ))}
         </ul>

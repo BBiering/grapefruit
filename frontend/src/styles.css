@@ -425,3 +425,144 @@ code {
   font-weight: 700;
 }
 .explanation-body { margin: 0; font-size: 0.92rem; line-height: 1.5; }
+
+/* --------------------------------------------- Past Winners: foreseeable flag */
+.wi-flag {
+  font-size: 0.7rem;
+  font-weight: 600;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  display: inline-block;
+}
+.wi-flag.foreseeable-yes {
+  background: rgba(31, 157, 91, 0.12);
+  color: #1f9d5b;
+}
+.wi-flag.foreseeable-no {
+  background: rgba(207, 59, 59, 0.12);
+  color: #cf3b3b;
+}
+
+/* -------------------------------------------- Future Winners: card-based grid */
+.future-layout {
+  display: flex;
+  gap: 1.5rem;
+}
+.future-cards {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  align-content: start;
+}
+.future-card {
+  background: var(--glass);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--glass-border);
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.future-card:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+.future-card.active {
+  border-color: rgba(232, 102, 79, 0.55);
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-md);
+}
+
+.fc-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+.fc-symbol {
+  font-weight: 700;
+  font-size: 1.1rem;
+  color: var(--text);
+}
+.fc-name {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.15rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fc-price {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--accent);
+}
+.fc-meta {
+  display: flex;
+  gap: 0.6rem;
+  font-size: 0.74rem;
+  margin-bottom: 0.85rem;
+}
+
+.fc-strategies {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.strategy {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.strategy-light {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: rgba(28, 26, 24, 0.12);
+  border: 1px solid rgba(28, 26, 24, 0.2);
+  flex-shrink: 0;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+.strategy-light.active {
+  background: #1f9d5b;
+  border-color: #1f9d5b;
+  box-shadow: 0 0 8px rgba(31, 157, 91, 0.5);
+}
+.strategy-content {
+  flex: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.strategy-label {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text);
+}
+.strategy-value {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.future-detail {
+  flex: 0 0 560px;
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+@media (max-width: 1000px) {
+  .future-layout {
+    flex-direction: column;
+  }
+  .future-detail {
+    position: relative;
+    top: auto;
+    max-height: none;
+    flex: 1;
+  }
+}
