@@ -31,10 +31,26 @@ _FORWARD_MODEL = "sonar-pro"  # stronger web reasoning for the look-ahead scan
 _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 
+# Lazy import perplexity SDK (only for Agent API calls)
+_perplexity_client = None
+
+
+def _get_perplexity_client():
+    global _perplexity_client
+    if _perplexity_client is None:
+        try:
+            from perplexity import Perplexity
+            _perplexity_client = Perplexity(api_key=settings.perplexity_api_key)
+        except ImportError:
+            log.warning("perplexity SDK not installed; falling back to httpx")
+            _perplexity_client = False  # sentinel
+    return _perplexity_client if _perplexity_client is not False else None
+
 
 def forward_catalyst(symbol: str, name: str | None, price: float | None) -> dict:
     """Scan the live web for an IMMINENT (next 1–90 days) forward-looking catalyst
-    for `symbol`, using sonar-pro with native JSON mode.
+    for `symbol`, using Perplexity Agent API with finance_search, web_search, and
+    fetch_url tools. Falls back to chat completion if Agent API unavailable.
 
     Returns {detected, event_name, impact_type, expected_window, strategic_summary,
     source_url, model, error?}. Never raises — errors are returned in `error`.
@@ -54,6 +70,94 @@ def forward_catalyst(symbol: str, name: str | None, price: float | None) -> dict
 
     label = f"{symbol} ({name})" if name else symbol
     price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
+
+    # Try Agent API first (preferred for finance_search access)
+    client = _get_perplexity_client()
+    if client:
+        return _forward_catalyst_agent_api(client, base, label, price_str, symbol)
+
+    # Fallback to chat completion API
+    return _forward_catalyst_chat_api(base, label, price_str, symbol)
+
+
+def _forward_catalyst_agent_api(client, base: dict, label: str, price_str: str, symbol: str) -> dict:
+    """Use Perplexity Agent API (Responses API) with finance_search tools."""
+    user_msg = (
+        "You are an institutional research analyst hunting for forward-looking, high-impact stock catalysts. "
+        f"Analyze live data for ticker '{label}' (price ~{price_str}).\n\n"
+        "Identify a SCHEDULED or highly anticipated FUTURE event in the next 1–90 days that could cause "
+        "a large structural re-pricing (Phase 2/3 readouts, FDA PDUFA dates, scheduled spin-offs, earnings "
+        "with expected guidance shifts, pending regulatory approvals, major contract decisions). "
+        "Ignore old news unless it sets up an imminent future event.\n\n"
+        "Return a JSON object with exactly these keys:\n"
+        "{\n"
+        '  "imminent_future_catalyst_detected": true or false,\n'
+        '  "catalyst_event_name": "name of the specific future event, or empty",\n'
+        '  "expected_date_window": "YYYY-MM-DD or a short timeframe, or empty",\n'
+        '  "catalyst_impact_type": "Binary FDA | Earnings | Spin-off | Contract | Regulatory | Other",\n'
+        '  "strategic_summary": "1-2 sentences on exactly what is dropping and why it could reprice the stock",\n'
+        '  "verified_source_url": "the exact live URL referencing this upcoming event, or empty"\n'
+        "}"
+    )
+
+    instructions = (
+        "You have access to finance_search, web_search, and fetch_url. "
+        "Use finance_search first for any ticker-specific data (prices, filings, estimates, transcripts, earnings dates). "
+        "Use web_search for catalyst calendars, trial registries, FDA calendars, and corporate IR pages. "
+        "Use fetch_url to pull full 8-Ks, press releases, or clinical trial protocol pages when needed. "
+        "Always verify the event is future-dated and scheduled, not historical. "
+        "Return ONLY the JSON object, no surrounding text."
+    )
+
+    try:
+        PERPLEXITY_BUCKET.acquire()
+        # Agent API uses preset names, not model names
+        # "pro-search" is the strongest preset with finance_search access
+        response = client.responses.create(
+            preset="pro-search",
+            input=user_msg,
+            tools=[
+                {"type": "finance_search"},
+                {"type": "web_search"},
+                {"type": "fetch_url"},
+            ],
+            instructions=instructions,
+        )
+
+        # Extract content from Agent API response
+        # Response.output is a list; the last message item contains the text response
+        raw = ""
+        if hasattr(response, "output") and response.output:
+            for item in response.output:
+                if hasattr(item, "type") and item.type == "message":
+                    if hasattr(item, "content") and item.content:
+                        for part in item.content:
+                            if hasattr(part, "text"):
+                                raw += part.text
+
+        if not raw:
+            raw = str(response)
+
+        parsed = _parse_json_response(raw)
+        if not parsed:
+            return {**base, "error": "unparseable"}
+
+        return {
+            **base,
+            "detected": bool(parsed.get("imminent_future_catalyst_detected")),
+            "event_name": (parsed.get("catalyst_event_name") or "").strip() or None,
+            "impact_type": (parsed.get("catalyst_impact_type") or "").strip() or None,
+            "expected_window": (parsed.get("expected_date_window") or "").strip() or None,
+            "strategic_summary": (parsed.get("strategic_summary") or "").strip() or None,
+            "source_url": (parsed.get("verified_source_url") or "").strip() or None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.warning("perplexity agent API failed for %s: %s", symbol, redact(str(exc)))
+        return {**base, "error": f"agent_api_failed: {type(exc).__name__}"}
+
+
+def _forward_catalyst_chat_api(base: dict, label: str, price_str: str, symbol: str) -> dict:
+    """Fallback to chat completion API (no finance_search tools)."""
     user_msg = (
         "You are an institutional research analyst hunting for forward-looking, "
         "high-impact stock catalysts. Analyze the live web, SEC EDGAR filings "
