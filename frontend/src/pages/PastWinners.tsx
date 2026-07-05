@@ -7,7 +7,8 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  ReferenceDot,
+  ReferenceLine,
+  ReferenceArea,
   CartesianGrid,
 } from "recharts";
 import { supabase } from "../supabase";
@@ -170,9 +171,6 @@ function WinnerDetail({ w }: { w: Winner }) {
     [bq.data],
   );
 
-  const troughPoint = series.find((p) => p.ts === w.start_ts);
-  const peakPoint = series.find((p) => p.ts === w.end_ts);
-
   return (
     <div>
       <div className="detail-head">
@@ -222,12 +220,28 @@ function WinnerDetail({ w }: { w: Winner }) {
                 strokeWidth={2}
                 dot={false}
               />
-              {troughPoint && (
-                <ReferenceDot x={troughPoint.ts} y={troughPoint.close} r={5} fill="#6b6661" stroke="#fff" />
-              )}
-              {peakPoint && (
-                <ReferenceDot x={peakPoint.ts} y={peakPoint.close} r={5} fill="#f4bd4c" stroke="#fff" />
-              )}
+
+              {/* Winner move: vertical bars at start/end with transparent fill */}
+              <ReferenceLine
+                x={w.start_ts}
+                stroke="#6b6661"
+                strokeWidth={2}
+                strokeDasharray="3 3"
+                label={{ value: "Start", position: "top", fontSize: 10, fill: "#6b6661" }}
+              />
+              <ReferenceLine
+                x={w.end_ts}
+                stroke="#f4bd4c"
+                strokeWidth={2}
+                strokeDasharray="3 3"
+                label={{ value: "Peak", position: "top", fontSize: 10, fill: "#f4bd4c" }}
+              />
+              <ReferenceArea
+                x1={w.start_ts}
+                x2={w.end_ts}
+                fill="#f4bd4c"
+                fillOpacity={0.15}
+              />
             </LineChart>
           </ResponsiveContainer>
         )}

@@ -7,11 +7,12 @@ import {
   XAxis,
   YAxis,
   Tooltip,
-  ReferenceDot,
+  ReferenceLine,
+  ReferenceArea,
   CartesianGrid,
 } from "recharts";
 import { supabase } from "../supabase";
-import type { ForwardCatalyst, WatchlistRow, Bar } from "../types";
+import type { ForwardCatalyst, WatchlistRow, WatchlistMove, Bar } from "../types";
 
 function formatMoney(usd: number | null) {
   if (usd == null) return <span className="muted">—</span>;
@@ -63,7 +64,7 @@ interface RawEvent {
 async function fetchFutureWinners(): Promise<WatchlistRow[]> {
   const today = new Date().toISOString().slice(0, 10);
 
-  const [w, e, c] = await Promise.all([
+  const [w, e, c, m] = await Promise.all([
     supabase
       .from("watchlist")
       .select(`
@@ -80,11 +81,13 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
       .order("event_ts", { ascending: true })
       .limit(2000),
     supabase.from("forward_catalysts").select("*").limit(500),
+    supabase.from("watchlist_moves").select("*").limit(500),
   ]);
 
   if (w.error) throw w.error;
   if (e.error) throw e.error;
   if (c.error) throw c.error;
+  if (m.error) throw m.error;
 
   const earliestBySymbol = new Map<string, RawEvent>();
   for (const ev of (e.data ?? []) as RawEvent[]) {
@@ -93,6 +96,10 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
   const catalystBySymbol = new Map<string, ForwardCatalyst>();
   for (const fc of (c.data ?? []) as ForwardCatalyst[]) {
     catalystBySymbol.set(fc.symbol, fc);
+  }
+  const moveBySymbol = new Map<string, WatchlistMove>();
+  for (const move of (m.data ?? []) as WatchlistMove[]) {
+    moveBySymbol.set(move.symbol, move);
   }
 
   return ((w.data ?? []) as unknown as RawWatchlist[]).map((r) => {
@@ -104,6 +111,7 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
       next_event_type: ev?.event_type ?? null,
       next_event_title: ev?.title ?? null,
       catalyst: catalystBySymbol.get(r.symbol) ?? null,
+      move: moveBySymbol.get(r.symbol) ?? null,
     };
   });
 }
@@ -220,17 +228,26 @@ function DetailPane({ row }: { row: WatchlistRow }) {
     staleTime: 5 * 60_000,
   });
 
-  const series = useMemo(
-    () => (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close })),
-    [bq.data],
-  );
+  const { extendedSeries, xDomain } = useMemo(() => {
+    const historicalData = (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close }));
 
-  // Find the catalyst date point if it exists
-  const catalystPoint = useMemo(() => {
-    if (!row.next_event_ts || !series.length) return null;
-    const eventDate = row.next_event_ts.slice(0, 10);
-    return series.find((p) => p.ts === eventDate);
-  }, [row.next_event_ts, series]);
+    // Extend X-axis 90 days into the future to show catalyst events
+    if (historicalData.length === 0) return { extendedSeries: [], xDomain: undefined };
+
+    const lastDate = new Date(historicalData[historicalData.length - 1].ts);
+    const futureDate = new Date(lastDate);
+    futureDate.setDate(futureDate.getDate() + 90);
+
+    return {
+      extendedSeries: historicalData,
+      xDomain: [historicalData[0].ts, futureDate.toISOString().slice(0, 10)],
+    };
+  }, [bq.data]);
+
+  const catalystDate = useMemo(() => {
+    if (!row.next_event_ts) return null;
+    return row.next_event_ts.slice(0, 10);
+  }, [row.next_event_ts]);
 
   return (
     <div>
@@ -249,17 +266,19 @@ function DetailPane({ row }: { row: WatchlistRow }) {
       <div className="card chart-card">
         {bq.isLoading ? (
           <div className="muted chart-empty">Loading price history…</div>
-        ) : series.length < 2 ? (
+        ) : extendedSeries.length < 2 ? (
           <div className="muted chart-empty">No price history available.</div>
         ) : (
           <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={series} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
+            <LineChart data={extendedSeries} margin={{ top: 10, right: 16, bottom: 0, left: 0 }}>
               <CartesianGrid stroke="rgba(28,26,24,0.06)" vertical={false} />
               <XAxis
                 dataKey="ts"
                 tick={{ fontSize: 11, fill: "#6b6661" }}
                 minTickGap={60}
                 tickFormatter={(t) => String(t).slice(0, 7)}
+                domain={xDomain}
+                type="category"
               />
               <YAxis
                 tick={{ fontSize: 11, fill: "#6b6661" }}
@@ -278,8 +297,41 @@ function DetailPane({ row }: { row: WatchlistRow }) {
                 strokeWidth={2}
                 dot={false}
               />
-              {catalystPoint && (
-                <ReferenceDot x={catalystPoint.ts} y={catalystPoint.close} r={5} fill="#4c9aff" stroke="#fff" />
+
+              {/* Recent move that drove momentum selection */}
+              {row.move && (
+                <>
+                  <ReferenceLine
+                    x={row.move.start_ts}
+                    stroke="#6b6661"
+                    strokeWidth={2}
+                    strokeDasharray="3 3"
+                    label={{ value: "Start", position: "top", fontSize: 10, fill: "#6b6661" }}
+                  />
+                  <ReferenceLine
+                    x={row.move.end_ts}
+                    stroke="#f4bd4c"
+                    strokeWidth={2}
+                    strokeDasharray="3 3"
+                    label={{ value: "Peak", position: "top", fontSize: 10, fill: "#f4bd4c" }}
+                  />
+                  <ReferenceArea
+                    x1={row.move.start_ts}
+                    x2={row.move.end_ts}
+                    fill="#f4bd4c"
+                    fillOpacity={0.15}
+                  />
+                </>
+              )}
+
+              {/* Future catalyst event */}
+              {catalystDate && (
+                <ReferenceLine
+                  x={catalystDate}
+                  stroke="#4c9aff"
+                  strokeWidth={2}
+                  label={{ value: "Catalyst", position: "top", fontSize: 10, fill: "#4c9aff" }}
+                />
               )}
             </LineChart>
           </ResponsiveContainer>

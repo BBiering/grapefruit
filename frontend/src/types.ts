@@ -41,6 +41,16 @@ export interface ForwardCatalyst {
   scanned_at: string | null;
 }
 
+export interface WatchlistMove {
+  symbol: string;
+  start_ts: string;
+  end_ts: string;
+  trough_price: number;
+  peak_price: number;
+  multiplier: number;
+  days_to_peak: number;
+}
+
 export interface WatchlistRow {
   symbol: string;
   last_close: number | null;
@@ -64,4 +74,6 @@ export interface WatchlistRow {
   next_event_title: string | null;
   // joined from forward_catalysts
   catalyst: ForwardCatalyst | null;
+  // joined from watchlist_moves (recent move that drove momentum)
+  move: WatchlistMove | null;
 }
