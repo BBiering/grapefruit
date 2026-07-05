@@ -307,32 +307,42 @@ function DetailPane({ row }: { row: WatchlistRow }) {
     if (historicalData.length === 0) return [];
 
     const lastDate = historicalData[historicalData.length - 1].ts;
+    const lastDateObj = new Date(lastDate);
     const extended = [...historicalData];
 
-    const datesToAdd: string[] = [];
+    // Determine the furthest future date we need to extend to
+    let targetEndDate: Date;
 
-    // Add catalyst period dates if they're beyond the last bar
-    if (catalystPeriod.startDate && catalystPeriod.startDate > lastDate) {
-      datesToAdd.push(catalystPeriod.startDate);
-    }
     if (catalystPeriod.endDate && catalystPeriod.endDate > lastDate) {
-      datesToAdd.push(catalystPeriod.endDate);
+      // Extend to catalyst end date
+      targetEndDate = new Date(catalystPeriod.endDate);
+    } else if (catalystPeriod.startDate && catalystPeriod.startDate > lastDate) {
+      // Extend to catalyst start date
+      targetEndDate = new Date(catalystPeriod.startDate);
+    } else {
+      // No future catalyst, extend 90 days
+      targetEndDate = new Date(lastDateObj);
+      targetEndDate.setDate(targetEndDate.getDate() + 90);
     }
 
-    // If no catalyst dates to add, extend 90 days into future
-    if (datesToAdd.length === 0) {
-      const lastDateObj = new Date(lastDate);
-      const futureDate = new Date(lastDateObj);
-      futureDate.setDate(futureDate.getDate() + 90);
-      datesToAdd.push(futureDate.toISOString().slice(0, 10));
-    }
+    // Fill in the timeline with placeholder points (weekly intervals to keep data manageable)
+    const currentDate = new Date(lastDateObj);
+    currentDate.setDate(currentDate.getDate() + 7); // Start 1 week after last bar
 
-    // Add placeholder points sorted by date
-    datesToAdd.sort();
-    for (const date of datesToAdd) {
+    while (currentDate <= targetEndDate) {
       extended.push({
-        ts: date,
-        close: null as any, // null so line doesn't extend
+        ts: currentDate.toISOString().slice(0, 10),
+        close: null as any,
+      });
+      currentDate.setDate(currentDate.getDate() + 7); // Add 1 week at a time
+    }
+
+    // Ensure the exact target end date is included
+    const targetEndStr = targetEndDate.toISOString().slice(0, 10);
+    if (extended[extended.length - 1].ts !== targetEndStr) {
+      extended.push({
+        ts: targetEndStr,
+        close: null as any,
       });
     }
 
