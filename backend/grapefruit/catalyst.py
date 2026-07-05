@@ -87,7 +87,6 @@ def forward_catalyst(symbol: str, name: str | None, price: float | None) -> dict
             },
             {"role": "user", "content": user_msg},
         ],
-        "response_format": {"type": "json_object"},
         "temperature": 0.2,
     }
     headers = {
