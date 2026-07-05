@@ -25,6 +25,7 @@ KNOWN_JOBS = {
     "refresh_bars",
     "refresh_fundamentals",
     "detect_winners",
+    "detect_watchlist_moves",
     "enrich_catalysts",
     "refresh_watchlist",
     "refresh_sectors",

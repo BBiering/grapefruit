@@ -756,3 +756,27 @@ def assets_needing_fundamentals(stale_after_days: int = 7) -> list[str]:
             [stale_after_days],
         )
         return [r[0] for r in cur.fetchall()]
+
+
+# ---------------------------------------------------------------------------
+# watchlist_moves (recent step increases for watchlist symbols)
+# ---------------------------------------------------------------------------
+
+def replace_watchlist_moves(rows: list[dict]) -> int:
+    """Replace all watchlist_moves rows. Called by detect_watchlist_moves pipeline."""
+    cols = (
+        "symbol", "start_ts", "end_ts", "trough_price", "peak_price",
+        "multiplier", "days_to_peak",
+    )
+    collist = ", ".join(cols)
+    placeholders = ", ".join(["%s"] * len(cols))
+    payload = [tuple(r.get(c) for c in cols) for r in rows]
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.execute("DELETE FROM watchlist_moves")
+            if payload:
+                cur.executemany(
+                    f"INSERT INTO watchlist_moves ({collist}) VALUES ({placeholders})",
+                    payload,
+                )
+    return len(payload)

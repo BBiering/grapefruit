@@ -10,6 +10,7 @@ import logging
 
 from grapefruit.pipelines import (
     detect_winners,
+    detect_watchlist_moves,
     enrich_catalysts,
     refresh_bars,
     refresh_fundamentals,
@@ -33,6 +34,7 @@ def run() -> int:
         refresh_bars,
         detect_winners,
         refresh_watchlist,
+        detect_watchlist_moves,  # after watchlist exists, detects recent moves
         refresh_sectors,   # after winners/watchlist exist, so it scopes to them
         enrich_catalysts,
         refresh_upcoming_events,
