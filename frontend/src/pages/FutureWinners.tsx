@@ -245,9 +245,17 @@ function DetailPane({ row }: { row: WatchlistRow }) {
   }, [bq.data]);
 
   const catalystDate = useMemo(() => {
-    if (!row.next_event_ts) return null;
-    return row.next_event_ts.slice(0, 10);
-  }, [row.next_event_ts]);
+    // Try to extract a date from catalyst expected_window first
+    if (row.catalyst?.detected && row.catalyst.expected_window) {
+      const window = row.catalyst.expected_window;
+      // Match YYYY-MM-DD pattern (first date if range like "2026-08-04 to 2026-08-10")
+      const match = window.match(/(\d{4}-\d{2}-\d{2})/);
+      if (match) return match[1];
+    }
+    // Fallback to next_event_ts (earnings calendar)
+    if (row.next_event_ts) return row.next_event_ts.slice(0, 10);
+    return null;
+  }, [row.catalyst, row.next_event_ts]);
 
   return (
     <div>
