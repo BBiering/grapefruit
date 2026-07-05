@@ -51,6 +51,7 @@ interface RawWatchlist {
   quality_score: number | null;
   combined_score: number | null;
   rank: number | null;
+  strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
   assets: { name: string | null } | null;
 }
 
@@ -70,6 +71,7 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
       .select(`
         symbol, last_close, market_cap_usd, sector, industry, why_listed, added_at,
         dollar_volume, momentum_180d, momentum_score, quality_score, combined_score, rank,
+        strategy_tag,
         assets ( name )
       `)
       .order("combined_score", { ascending: false, nullsFirst: false })
@@ -174,6 +176,12 @@ export default function FutureWinners() {
               </div>
             </div>
 
+            {r.strategy_tag && (
+              <div className="fc-strategy-badge">
+                <StrategyBadge tag={r.strategy_tag} />
+              </div>
+            )}
+
             <div className="fc-meta">
               <span className="muted">{r.industry ?? r.sector ?? "—"}</span>
               <span className="muted">{formatMoney(r.market_cap_usd)}</span>
@@ -206,6 +214,32 @@ export default function FutureWinners() {
         </div>
       )}
     </div>
+  );
+}
+
+function StrategyBadge({ tag }: { tag: "Buy Manually" | "Watchlist" | "Pass" }) {
+  const colors = {
+    "Buy Manually": { bg: "#1f8a4c", text: "#fff" },
+    "Watchlist": { bg: "#4c9aff", text: "#fff" },
+    "Pass": { bg: "#6b6661", text: "#fff" },
+  };
+  const style = colors[tag];
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "3px 8px",
+        borderRadius: "4px",
+        fontSize: "11px",
+        fontWeight: 600,
+        backgroundColor: style.bg,
+        color: style.text,
+        textTransform: "uppercase",
+        letterSpacing: "0.5px",
+      }}
+    >
+      {tag}
+    </span>
   );
 }
 

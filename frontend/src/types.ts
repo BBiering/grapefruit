@@ -66,6 +66,7 @@ export interface WatchlistRow {
   quality_score: number | null;
   combined_score: number | null;
   rank: number | null;
+  strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
   // joined from assets
   name: string | null;
   // joined from upcoming_events (nearest)

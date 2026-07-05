@@ -31,6 +31,7 @@ KNOWN_JOBS = {
     "refresh_sectors",
     "refresh_upcoming_events",
     "scan_forward_catalysts",
+    "compute_strategy_tags",
     "weekly",
 }
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 
 from grapefruit.pipelines import (
+    compute_strategy_tags,
     detect_winners,
     detect_watchlist_moves,
     enrich_catalysts,
@@ -39,6 +40,7 @@ def run() -> int:
         enrich_catalysts,
         refresh_upcoming_events,
         scan_forward_catalysts,  # after watchlist exists
+        compute_strategy_tags,  # after watchlist + forward_catalysts, computes tags
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)

@@ -500,6 +500,9 @@ code {
   font-size: 1.05rem;
   color: var(--accent);
 }
+.fc-strategy-badge {
+  margin-bottom: 0.65rem;
+}
 .fc-meta {
   display: flex;
   gap: 0.6rem;
