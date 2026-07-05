@@ -228,22 +228,6 @@ function DetailPane({ row }: { row: WatchlistRow }) {
     staleTime: 5 * 60_000,
   });
 
-  const { extendedSeries, xDomain } = useMemo(() => {
-    const historicalData = (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close }));
-
-    // Extend X-axis 90 days into the future to show catalyst events
-    if (historicalData.length === 0) return { extendedSeries: [], xDomain: undefined };
-
-    const lastDate = new Date(historicalData[historicalData.length - 1].ts);
-    const futureDate = new Date(lastDate);
-    futureDate.setDate(futureDate.getDate() + 90);
-
-    return {
-      extendedSeries: historicalData,
-      xDomain: [historicalData[0].ts, futureDate.toISOString().slice(0, 10)],
-    };
-  }, [bq.data]);
-
   const catalystDate = useMemo(() => {
     // Try to extract a date from catalyst expected_window first
     if (row.catalyst?.detected && row.catalyst.expected_window) {
@@ -256,6 +240,36 @@ function DetailPane({ row }: { row: WatchlistRow }) {
     if (row.next_event_ts) return row.next_event_ts.slice(0, 10);
     return null;
   }, [row.catalyst, row.next_event_ts]);
+
+  const extendedSeries = useMemo(() => {
+    const historicalData = (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close }));
+
+    // Extend timeline to include catalyst date if it's in the future
+    if (historicalData.length === 0) return [];
+
+    const lastDate = historicalData[historicalData.length - 1].ts;
+    const extended = [...historicalData];
+
+    // If catalyst date exists and is after last bar date, add placeholder points
+    if (catalystDate && catalystDate > lastDate) {
+      // Add the catalyst date as a placeholder point so Recharts can render it
+      extended.push({
+        ts: catalystDate,
+        close: null as any, // null so line doesn't extend
+      });
+    } else {
+      // Add a future point 90 days out to extend the timeline
+      const lastDateObj = new Date(lastDate);
+      const futureDate = new Date(lastDateObj);
+      futureDate.setDate(futureDate.getDate() + 90);
+      extended.push({
+        ts: futureDate.toISOString().slice(0, 10),
+        close: null as any,
+      });
+    }
+
+    return extended;
+  }, [bq.data, catalystDate]);
 
   return (
     <div>
@@ -285,8 +299,6 @@ function DetailPane({ row }: { row: WatchlistRow }) {
                 tick={{ fontSize: 11, fill: "#6b6661" }}
                 minTickGap={60}
                 tickFormatter={(t) => String(t).slice(0, 7)}
-                domain={xDomain}
-                type="category"
               />
               <YAxis
                 tick={{ fontSize: 11, fill: "#6b6661" }}
@@ -304,6 +316,7 @@ function DetailPane({ row }: { row: WatchlistRow }) {
                 stroke="#e8664f"
                 strokeWidth={2}
                 dot={false}
+                connectNulls={false}
               />
 
               {/* Recent move that drove momentum selection */}
