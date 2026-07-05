@@ -228,48 +228,116 @@ function DetailPane({ row }: { row: WatchlistRow }) {
     staleTime: 5 * 60_000,
   });
 
-  const catalystDate = useMemo(() => {
-    // Try to extract a date from catalyst expected_window first
+  const catalystPeriod = useMemo(() => {
+    let startDate: string | null = null;
+    let endDate: string | null = null;
+
+    // Try to extract dates from catalyst expected_window first
     if (row.catalyst?.detected && row.catalyst.expected_window) {
       const window = row.catalyst.expected_window;
-      // Match YYYY-MM-DD pattern (first date if range like "2026-08-04 to 2026-08-10")
-      const match = window.match(/(\d{4}-\d{2}-\d{2})/);
-      if (match) return match[1];
+
+      // Case 1: Explicit date range "2026-07-30 to 2026-08-04"
+      const rangeMatch = window.match(/(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/);
+      if (rangeMatch) {
+        startDate = rangeMatch[1];
+        endDate = rangeMatch[2];
+      } else {
+        // Case 2: Single date "2026-08-06"
+        const singleMatch = window.match(/^(\d{4}-\d{2}-\d{2})$/);
+        if (singleMatch) {
+          startDate = singleMatch[1];
+          endDate = null; // Single date, no range
+        } else {
+          // Case 3: Vague period like "Next 30-60 days (post-June 1, 2026)"
+          // Try to extract duration and any date format
+          const durationMatch = window.match(/(\d+)-(\d+)\s+days/i);
+          const isoDateMatch = window.match(/(\d{4}-\d{2}-\d{2})/);
+          const textDateMatch = window.match(/(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2}),?\s+(\d{4})/i);
+
+          if (durationMatch && (isoDateMatch || textDateMatch)) {
+            const durationDays = parseInt(durationMatch[2]); // Upper bound
+
+            let baseDate: Date;
+            if (isoDateMatch) {
+              baseDate = new Date(isoDateMatch[1]);
+              startDate = isoDateMatch[1];
+            } else if (textDateMatch) {
+              // Parse text date like "June 1, 2026"
+              const month = textDateMatch[1];
+              const day = parseInt(textDateMatch[2]);
+              const year = parseInt(textDateMatch[3]);
+              baseDate = new Date(`${month} ${day}, ${year}`);
+              startDate = baseDate.toISOString().slice(0, 10);
+            } else {
+              baseDate = new Date();
+              startDate = baseDate.toISOString().slice(0, 10);
+            }
+
+            const end = new Date(baseDate);
+            end.setDate(end.getDate() + durationDays);
+            endDate = end.toISOString().slice(0, 10);
+          } else {
+            // Last resort: extract first date found (any format)
+            if (isoDateMatch) {
+              startDate = isoDateMatch[1];
+              endDate = null;
+            } else if (textDateMatch) {
+              const baseDate = new Date(`${textDateMatch[1]} ${textDateMatch[2]}, ${textDateMatch[3]}`);
+              startDate = baseDate.toISOString().slice(0, 10);
+              endDate = null;
+            }
+          }
+        }
+      }
     }
+
     // Fallback to next_event_ts (earnings calendar)
-    if (row.next_event_ts) return row.next_event_ts.slice(0, 10);
-    return null;
+    if (!startDate && row.next_event_ts) {
+      startDate = row.next_event_ts.slice(0, 10);
+      endDate = null;
+    }
+
+    return { startDate, endDate };
   }, [row.catalyst, row.next_event_ts]);
 
   const extendedSeries = useMemo(() => {
     const historicalData = (bq.data ?? []).map((b) => ({ ts: b.ts, close: b.close }));
 
-    // Extend timeline to include catalyst date if it's in the future
+    // Extend timeline to include catalyst dates if they're in the future
     if (historicalData.length === 0) return [];
 
     const lastDate = historicalData[historicalData.length - 1].ts;
     const extended = [...historicalData];
 
-    // If catalyst date exists and is after last bar date, add placeholder points
-    if (catalystDate && catalystDate > lastDate) {
-      // Add the catalyst date as a placeholder point so Recharts can render it
-      extended.push({
-        ts: catalystDate,
-        close: null as any, // null so line doesn't extend
-      });
-    } else {
-      // Add a future point 90 days out to extend the timeline
+    const datesToAdd: string[] = [];
+
+    // Add catalyst period dates if they're beyond the last bar
+    if (catalystPeriod.startDate && catalystPeriod.startDate > lastDate) {
+      datesToAdd.push(catalystPeriod.startDate);
+    }
+    if (catalystPeriod.endDate && catalystPeriod.endDate > lastDate) {
+      datesToAdd.push(catalystPeriod.endDate);
+    }
+
+    // If no catalyst dates to add, extend 90 days into future
+    if (datesToAdd.length === 0) {
       const lastDateObj = new Date(lastDate);
       const futureDate = new Date(lastDateObj);
       futureDate.setDate(futureDate.getDate() + 90);
+      datesToAdd.push(futureDate.toISOString().slice(0, 10));
+    }
+
+    // Add placeholder points sorted by date
+    datesToAdd.sort();
+    for (const date of datesToAdd) {
       extended.push({
-        ts: futureDate.toISOString().slice(0, 10),
-        close: null as any,
+        ts: date,
+        close: null as any, // null so line doesn't extend
       });
     }
 
     return extended;
-  }, [bq.data, catalystDate]);
+  }, [bq.data, catalystPeriod]);
 
   return (
     <div>
@@ -346,13 +414,42 @@ function DetailPane({ row }: { row: WatchlistRow }) {
               )}
 
               {/* Future catalyst event */}
-              {catalystDate && (
-                <ReferenceLine
-                  x={catalystDate}
-                  stroke="#4c9aff"
-                  strokeWidth={2}
-                  label={{ value: "Catalyst", position: "top", fontSize: 10, fill: "#4c9aff" }}
-                />
+              {catalystPeriod.startDate && (
+                <>
+                  {catalystPeriod.endDate ? (
+                    // Date range: two lines + transparent fill
+                    <>
+                      <ReferenceLine
+                        x={catalystPeriod.startDate}
+                        stroke="#4c9aff"
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        label={{ value: "Catalyst Start", position: "top", fontSize: 10, fill: "#4c9aff" }}
+                      />
+                      <ReferenceLine
+                        x={catalystPeriod.endDate}
+                        stroke="#4c9aff"
+                        strokeWidth={2}
+                        strokeDasharray="3 3"
+                        label={{ value: "Catalyst End", position: "top", fontSize: 10, fill: "#4c9aff" }}
+                      />
+                      <ReferenceArea
+                        x1={catalystPeriod.startDate}
+                        x2={catalystPeriod.endDate}
+                        fill="#4c9aff"
+                        fillOpacity={0.15}
+                      />
+                    </>
+                  ) : (
+                    // Single date: one solid line
+                    <ReferenceLine
+                      x={catalystPeriod.startDate}
+                      stroke="#4c9aff"
+                      strokeWidth={2}
+                      label={{ value: "Catalyst", position: "top", fontSize: 10, fill: "#4c9aff" }}
+                    />
+                  )}
+                </>
               )}
             </LineChart>
           </ResponsiveContainer>
