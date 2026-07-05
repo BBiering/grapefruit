@@ -22,14 +22,11 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-# Small-cap band in USD. "Small cap" classically spans ~$300M–$2B.
-# Focus on US small-caps accessible to retail investors: $300M-$10B market cap
-# (generous ceiling to keep winners that grew during their surge), latest close
-# <$50 (no expensive tickers), and average volume ≥50k shares/day (liquid).
+# Market cap filter only. Focus on companies with market cap ≤$10B.
+# No price or volume filters at universe level - those will be applied
+# at the strategy level (momentum, quality, catalyst).
 MIN_MARKET_CAP_USD = 300e6
 MAX_MARKET_CAP_USD = 10e9
-MAX_PRICE_USD = 50.0
-MIN_AVG_VOLUME = 50_000
 
 
 def _market_cap_usd(raw_cap, fx: float) -> float | None:
@@ -71,15 +68,6 @@ def run() -> int:
                 r.get("MarketCapitalization") or r.get("market_capitalization"), fx
             )
             if cap_usd is None or not (MIN_MARKET_CAP_USD <= cap_usd <= MAX_MARKET_CAP_USD):
-                continue
-
-            # Retail-accessible: price <$50 and liquid (avg volume ≥50k shares/day).
-            # EODHD bulk-extended has `close` (latest) and `avgvol_14d` (2-week avg).
-            close = r.get("close")
-            if not isinstance(close, (int, float)) or close <= 0 or close >= MAX_PRICE_USD:
-                continue
-            vol = r.get("avgvol_14d")
-            if not isinstance(vol, (int, float)) or vol < MIN_AVG_VOLUME:
                 continue
 
             if isin:

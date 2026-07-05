@@ -245,12 +245,21 @@ def fundamentals_highlights(fundamentals: dict | None) -> tuple[float | None, fl
     """Extract (net_income_ttm, profit_margin) from a /fundamentals payload.
 
     Returns (None, None) when the payload is missing or lacks the Highlights
-    block. profit_margin is a fraction (0.15 == 15%)."""
+    block. profit_margin is a fraction (0.15 == 15%).
+
+    If NetIncomeTTM is not available, derive it from RevenueTTM × ProfitMargin."""
     if not fundamentals:
         return None, None
     hi = fundamentals.get("Highlights") or {}
     ni = hi.get("NetIncomeTTM") if isinstance(hi.get("NetIncomeTTM"), (int, float)) else None
     pm = hi.get("ProfitMargin") if isinstance(hi.get("ProfitMargin"), (int, float)) else None
+
+    # Derive net income if not available but we have revenue and margin
+    if ni is None and pm is not None:
+        revenue = hi.get("RevenueTTM") if isinstance(hi.get("RevenueTTM"), (int, float)) else None
+        if revenue is not None and revenue > 0:
+            ni = float(revenue) * float(pm)
+
     return (float(ni) if ni is not None else None, float(pm) if pm is not None else None)
 
 

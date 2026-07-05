@@ -235,8 +235,10 @@ def detect_winners(
     that trade most days while dropping illiquid OTC-style tickers.
 
     Retail-accessibility: only show moves that started <=$max_trough_price
-    (default $50). A winner that surged $12 -> $65 is kept (started <$50), but
-    one that rose $60 -> $100 is dropped (expensive entry point).
+    (default $50). We want to find stocks that crossed the $50 threshold:
+    - $12 -> $65 ✓ (started <$50, ended >$50 - crossed threshold)
+    - $8 -> $45 ✓ (started <$50, stayed <$50 - accessible throughout)
+    - $60 -> $100 ✗ (started >$50 - expensive entry point)
     """
     n = len(closes)
     if n < 2 or len(dates) != n:

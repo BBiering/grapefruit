@@ -1,17 +1,17 @@
 """Weekly: the quantitative screener that produces the look-ahead watchlist.
 
-Pipeline:
+New Strategy-Focused Pipeline:
   1. Bulk EOD per exchange -> latest close + volume per symbol (1 call/exchange).
-  2. Hard filter (USD-converted): price in [$1, $50] AND dollar-volume > $1M.
-  3. Rank survivors by 180-day momentum (currency-independent ratio); keep the
-     top MOMENTUM_POOL.
-  4. For that pool, pull per-symbol fundamentals + insider (Form 4) and compute
-     quality/insider scores. Both endpoints are gated on the current EODHD tier
-     and degrade to a neutral 50 — momentum then drives the ranking.
-  5. combined_score = weighted blend; keep top TOP_N -> watchlist.
+  2. For ALL universe symbols, pull fundamentals and compute:
+     - momentum_180d (for ranking, not filtering)
+     - quality_score (for filtering: must be profitable, score > 50)
+     - insider_score (for context)
+  3. FILTER by quality: keep only quality_score > 50 (profitable companies).
+  4. Rank by combined_score (momentum 50%, quality 30%, insider 20%).
+  5. Keep top TOP_N -> watchlist.
 
-Currency: prices are local. usd_factor(exchange) converts price + dollar-volume
-to USD; LSE quotes in pence (GBX), so its factor includes a /100.
+No price or volume filters - we want all companies ≤$10B market cap.
+Quality (profitability) is the primary filter; momentum is for ranking.
 """
 from __future__ import annotations
 
@@ -24,8 +24,9 @@ from grapefruit import eodhd_client, screening, storage
 
 log = logging.getLogger(__name__)
 
-MOMENTUM_POOL = 150  # how many top-momentum names get the expensive fundamentals pass
-TOP_N = 40           # final watchlist size
+TOP_N = 40  # final watchlist size
+MIN_QUALITY_SCORE = 50  # minimum quality score (50 = neutral, >50 = profitable)
+LIQUIDITY_POOL = 300  # pre-filter by liquidity to keep API calls reasonable
 
 
 def _usd_factor(exchange: str, fx: float) -> float:
@@ -40,7 +41,7 @@ def run() -> int:
         return 0
     momentum = storage.momentum_180d_all()
 
-    # ---- steps 1-2: bulk feed + hard filter (USD-converted) -----------------
+    # ---- step 1-2: build candidates from all universe symbols ----------------
     candidates: list[dict] = []
     for exchange in eodhd_client.EXCHANGES:
         currency = eodhd_client.exchange_currency(exchange)
@@ -63,11 +64,9 @@ def run() -> int:
                 continue
             usd_price = float(close) * factor
             usd_dv = float(close) * float(volume) * factor
-            if not screening.passes_hard_filter(usd_price, usd_dv):
-                continue
             mom = momentum.get(symbol)
             if mom is None:
-                continue  # need 180d history to rank
+                mom = 0.0  # default to 0 if no history (will rank low)
             candidates.append(
                 {
                     "symbol": symbol,
@@ -80,16 +79,42 @@ def run() -> int:
             )
 
     if not candidates:
-        log.warning("no candidates passed the hard filter")
+        log.warning("no candidates in universe")
         storage.replace_watchlist([])
         return 0
-    log.info("%d candidates passed the hard filter", len(candidates))
+    log.info("%d total candidates from universe", len(candidates))
 
-    # ---- step 3: keep the top MOMENTUM_POOL by momentum ---------------------
-    candidates.sort(key=lambda c: c["momentum_180d"], reverse=True)
-    pool = candidates[:MOMENTUM_POOL]
+    # ---- step 3: pre-filter by liquidity to keep API calls reasonable -------
+    # Sort by dollar volume and keep top LIQUIDITY_POOL
+    candidates.sort(key=lambda c: c["dollar_volume"], reverse=True)
+    liquid_pool = candidates[:LIQUIDITY_POOL]
+    log.info("kept top %d by liquidity (${%.0f}M+ daily volume)",
+             len(liquid_pool), liquid_pool[-1]["dollar_volume"] / 1e6 if liquid_pool else 0)
 
-    # ---- step 4: fundamentals + insider for the pool ------------------------
+    # ---- step 4: fetch fundamentals for liquid pool --------------------------
+    for i, c in enumerate(liquid_pool, start=1):
+        if i % 50 == 0:
+            log.info("fetching fundamentals: %d/%d", i, len(liquid_pool))
+        fundamentals = eodhd_client.fetch_fundamentals(c["symbol"])
+        ni, pm = eodhd_client.fundamentals_highlights(fundamentals)
+        c["net_income"] = ni
+        c["profit_margin"] = pm
+        c["quality_score"] = screening.quality_score(ni, pm)
+        c["insider_score"] = screening.insider_score(
+            eodhd_client.fetch_insider_transactions(c["symbol"])
+        )
+
+    # ---- step 5: filter by quality (must be profitable) ---------------------
+    quality_filtered = [c for c in liquid_pool if c["quality_score"] > MIN_QUALITY_SCORE]
+    if not quality_filtered:
+        log.warning("no candidates passed quality filter (score > %d)", MIN_QUALITY_SCORE)
+        storage.replace_watchlist([])
+        return 0
+    log.info("%d/%d passed quality filter", len(quality_filtered), len(liquid_pool))
+
+    # ---- step 6: compute combined score and rank ----------------------------
+    pool = quality_filtered
+    moms = np.array([c["momentum_180d"] for c in pool])
     for c in pool:
         ni, pm = eodhd_client.fundamentals_highlights(
             eodhd_client.fetch_fundamentals(c["symbol"])
