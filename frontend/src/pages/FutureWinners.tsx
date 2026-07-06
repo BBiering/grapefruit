@@ -41,8 +41,6 @@ interface RawWatchlist {
   symbol: string;
   last_close: number | null;
   market_cap_usd: number | null;
-  sector: string | null;
-  industry: string | null;
   why_listed: string;
   added_at: string;
   dollar_volume: number | null;
@@ -52,7 +50,7 @@ interface RawWatchlist {
   combined_score: number | null;
   rank: number | null;
   strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
-  assets: { name: string | null } | null;
+  assets: { name: string | null; sector: string | null; industry: string | null } | null;
 }
 
 interface RawEvent {
@@ -69,10 +67,10 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
     supabase
       .from("watchlist")
       .select(`
-        symbol, last_close, market_cap_usd, sector, industry, why_listed, added_at,
+        symbol, last_close, market_cap_usd, why_listed, added_at,
         dollar_volume, momentum_180d, momentum_score, quality_score, combined_score, rank,
         strategy_tag,
-        assets ( name )
+        assets ( name, sector, industry )
       `)
       .order("combined_score", { ascending: false, nullsFirst: false })
       .limit(500),
@@ -109,6 +107,8 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
     return {
       ...r,
       name: r.assets?.name ?? null,
+      sector: r.assets?.sector ?? null,
+      industry: r.assets?.industry ?? null,
       next_event_ts: ev?.event_ts ?? null,
       next_event_type: ev?.event_type ?? null,
       next_event_title: ev?.title ?? null,
