@@ -49,10 +49,13 @@ JOB_NAMES = [
     "refresh_bars",
     "refresh_fundamentals",
     "detect_winners",
+    "detect_watchlist_moves",
     "enrich_catalysts",
     "refresh_watchlist",
+    "refresh_sectors",
     "refresh_upcoming_events",
     "scan_forward_catalysts",
+    "compute_strategy_tags",
     "weekly",
 ]
 
