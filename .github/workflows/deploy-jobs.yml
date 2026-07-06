@@ -19,8 +19,9 @@ env:
   IMAGE_NAME: grapefruit-pipelines
   JOBS: >-
     refresh_universe refresh_bars refresh_fundamentals
-    detect_winners enrich_catalysts refresh_watchlist
-    refresh_upcoming_events weekly
+    detect_winners detect_watchlist_moves enrich_catalysts
+    refresh_watchlist refresh_sectors refresh_upcoming_events
+    scan_forward_catalysts compute_strategy_tags weekly
 
 jobs:
   build-and-deploy:
