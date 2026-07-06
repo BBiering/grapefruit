@@ -4,10 +4,8 @@ EODHD's bulk feed (our universe/market-cap source) carries no sector or
 industry, but the per-symbol /fundamentals endpoint provides General.Sector
 and General.Industry for most stocks.
 
-Scoped to symbols that actually surface in the UI (winners + watchlist) and
-don't yet have a sector, so it's a small, incremental call volume rather than
-the whole universe. Symbols EODHD can't resolve are left null and retried next
-run.
+Processes the full universe incrementally, up to _MAX_PER_RUN per execution.
+Symbols EODHD can't resolve are left null and retried next run.
 """
 from __future__ import annotations
 
@@ -18,7 +16,7 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-_MAX_PER_RUN = 400  # bound EODHD call volume per weekly run
+_MAX_PER_RUN = 2000  # process up to 2000 symbols per run (full universe backfill)
 
 
 def run() -> int:

@@ -382,19 +382,14 @@ def load_asset(symbol: str) -> dict | None:
 
 
 def symbols_needing_sector(limit: int = 400) -> list[str]:
-    """Symbols that surface in the UI (winners or watchlist) but have no sector
-    yet in `assets`. Used by refresh_sectors to scope the yfinance backfill."""
+    """All symbols in `assets` that have no sector yet. Used by refresh_sectors
+    to backfill sector/industry data for the full universe."""
     with _cur() as cur:
         cur.execute(
             """
             SELECT a.symbol
             FROM assets a
             WHERE (a.sector IS NULL OR a.sector = '')
-              AND a.symbol IN (
-                  SELECT symbol FROM winners
-                  UNION
-                  SELECT symbol FROM watchlist
-              )
             ORDER BY a.symbol
             LIMIT %s
             """,
