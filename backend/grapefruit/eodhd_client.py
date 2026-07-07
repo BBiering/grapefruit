@@ -288,3 +288,23 @@ def fetch_earnings_calendar(start: date, end: date, symbols: list[str] | None = 
     if isinstance(data, dict):
         return data.get("earnings", [])
     return data if isinstance(data, list) else []
+
+
+def fetch_splits_calendar(start: date, end: date, symbols: list[str] | None = None) -> list[dict]:
+    """Upcoming stock splits in [start, end] for US tickers.
+
+    Optionally filter by `symbols`. Each item has at least:
+    `code` (symbol), `date`, `split` (ratio like "2:1" or "1:5"), `optionable`.
+
+    Ratio format: "new:old" (e.g., "1:5" = reverse split where 5 shares become 1,
+    "2:1" = forward split where 1 share becomes 2).
+
+    EODHD docs: https://eodhd.com/financial-apis/calendar-upcoming-earnings-ipos-splits/
+    """
+    params = {"from": start.isoformat(), "to": end.isoformat(), "type": "splits"}
+    if symbols:
+        params["symbols"] = ",".join(f"{s}.US" for s in symbols)
+    data = _get("calendar/splits", params)
+    if isinstance(data, dict):
+        return data.get("splits", [])
+    return data if isinstance(data, list) else []
