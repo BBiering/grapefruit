@@ -88,6 +88,12 @@ def run() -> int:
         log.info("%s: %d native commons, %d bulk rows -> %d small-cap (fx %s=%.4f)",
                  exchange, len(native), len(raw), kept, currency, fx)
 
+    # Exclude symbols with active risk flags (reverse splits, delisting risk, etc.)
+    risk_flagged = storage.symbols_with_active_risk_flags()
+    if risk_flagged:
+        log.info("excluding %d risk-flagged symbols from universe", len(risk_flagged))
+        rows = [r for r in rows if r["symbol"] not in risk_flagged]
+
     n = storage.upsert_assets(rows)
     symbols = sorted(r["symbol"] for r in rows)
     storage.set_app_state(

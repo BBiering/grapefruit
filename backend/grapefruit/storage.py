@@ -406,6 +406,78 @@ def update_asset_sector(symbol: str, *, sector: str | None, industry: str | None
         )
 
 
+def symbols_by_sector(sectors: list[str]) -> list[dict]:
+    """Returns symbols with their metadata filtered by sector."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT symbol, name, sector, industry, market_cap_usd, last_close
+            FROM assets
+            WHERE sector = ANY(%s)
+            ORDER BY market_cap_usd DESC NULLS LAST
+            """,
+            [sectors],
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
+def upsert_risk_flags(flags: list[dict]) -> int:
+    """Upsert risk flags for stocks to exclude from universe."""
+    if not flags:
+        return 0
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO universe_risk_flags
+                    (symbol, flag_type, flag_date, scheduled_date, split_ratio, description)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (symbol) DO UPDATE SET
+                    flag_type = EXCLUDED.flag_type,
+                    flag_date = EXCLUDED.flag_date,
+                    scheduled_date = EXCLUDED.scheduled_date,
+                    split_ratio = EXCLUDED.split_ratio,
+                    description = EXCLUDED.description,
+                    detected_at = NOW()
+                """,
+                [
+                    (
+                        f["symbol"],
+                        f["flag_type"],
+                        f["flag_date"],
+                        f.get("scheduled_date"),
+                        f.get("split_ratio"),
+                        f.get("description"),
+                    )
+                    for f in flags
+                ],
+            )
+    return len(flags)
+
+
+def symbols_with_active_risk_flags() -> set[str]:
+    """Returns set of symbols with active risk flags (for universe exclusion)."""
+    with _cur() as cur:
+        cur.execute("SELECT symbol FROM universe_risk_flags")
+        return {r[0] for r in cur.fetchall()}
+
+
+def top_symbols_by_market_cap(limit: int = 300) -> list[dict]:
+    """Returns top N symbols by market cap with metadata."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT symbol, name, sector, industry, market_cap_usd, last_close
+            FROM assets
+            WHERE market_cap_usd IS NOT NULL AND market_cap_usd > 0
+            ORDER BY market_cap_usd DESC
+            LIMIT %s
+            """,
+            [limit],
+        )
+        return [dict(r) for r in cur.fetchall()]
+
+
 def symbols_with_market_cap_below(cap_usd: float) -> list[str]:
     with _cur() as cur:
         cur.execute(

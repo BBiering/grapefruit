@@ -391,3 +391,158 @@ def _parse_json_response(text: str) -> dict:
         return obj if isinstance(obj, dict) else {}
     except json.JSONDecodeError:
         return {}
+
+
+# ============================================================================
+# Tier-specific catalyst detection functions
+# ============================================================================
+
+
+def tier1_biotech_catalyst(symbol: str, name: str | None = None, price: float | None = None) -> dict:
+    """Tier 1: Hunt for FDA PDUFA dates, AdCom votes, Phase 2b/3 readouts (biotech)."""
+    label = f"{symbol} ({name or 'N/A'})"
+    price_str = f"${price:.2f}" if price else "unknown"
+
+    user_msg = (
+        f"You are hunting for binary FDA and clinical trial catalysts for biotech ticker '{label}' (price ~{price_str}).\n\n"
+        "TIER 1 CATALYSTS TO DETECT (highest priority):\n"
+        "1. FDA PDUFA target action dates - exact decision deadline\n"
+        "2. FDA AdCom meeting dates - advisory committee vote\n"
+        "3. Phase 2b or Phase 3 topline data readout dates - final trial results unlock\n"
+        "4. BLA/NDA submission acceptance with assigned PDUFA date\n\n"
+        "Search:\n"
+        "- FDA PDUFA calendar trackers\n"
+        "- ClinicalTrials.gov for trial completion timelines\n"
+        "- Company IR pages for trial milestone guidance\n"
+        "- Biotech databases (e.g., BioPharmCatalyst)\n"
+        "- SEC 8-K filings announcing regulatory milestones\n\n"
+        "Return JSON:\n"
+        "{\n"
+        '  "tier1_catalyst_detected": true/false,\n'
+        '  "event_name": "specific event name",\n'
+        '  "event_type": "FDA PDUFA" | "FDA AdCom" | "Phase 3 Readout" | "Phase 2b Readout",\n'
+        '  "event_date": "YYYY-MM-DD or empty if vague",\n'
+        '  "expected_window": "Q2 2026" if no exact date,\n'
+        '  "confidence": 0.0-1.0 (1.0 = official filing, 0.6 = management guidance),\n'
+        '  "strategic_summary": "1-2 sentences on what\'s being decided and potential impact",\n'
+        '  "source_url": "exact URL of official source"\n'
+        "}\n\n"
+        "Only return detected=true if there's a scheduled or highly anticipated event in next 1-180 days."
+    )
+
+    instructions = (
+        "Use finance_search first for any ticker-specific data (prices, filings, estimates, transcripts). "
+        "Use web_search for FDA calendars, ClinicalTrials.gov, biotech databases, and company IR pages. "
+        "Use fetch_url to pull full 8-Ks, press releases, or clinical trial protocol pages when needed. "
+        "Always verify the event is future-dated and scheduled, not historical."
+    )
+
+    base = {
+        "symbol": symbol,
+        "detected": False,
+        "event_name": None,
+        "impact_type": None,
+        "expected_window": None,
+        "strategic_summary": None,
+        "source_url": None,
+        "model": _FORWARD_MODEL,
+        "tier": 1,
+        "tier_name": "Systemic Volatility",
+        "confidence_score": None,
+        "sector_targeted": True,
+    }
+
+    try:
+        result = _forward_catalyst_agent_api(symbol, user_msg, instructions)
+        if not result:
+            result = _forward_catalyst_chat_api(symbol, user_msg)
+
+        parsed = _extract_json_from_text(result)
+        detected = parsed.get("tier1_catalyst_detected", False)
+
+        return {
+            **base,
+            "detected": detected,
+            "event_name": parsed.get("event_name") if detected else None,
+            "impact_type": parsed.get("event_type") if detected else None,
+            "expected_window": parsed.get("expected_window") or parsed.get("event_date") if detected else None,
+            "strategic_summary": parsed.get("strategic_summary") if detected else None,
+            "source_url": parsed.get("source_url") if detected else None,
+            "confidence_score": parsed.get("confidence") if detected else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.warning("tier1 biotech catalyst failed for %s: %s", symbol, redact(str(exc)))
+        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
+
+
+def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | None = None) -> dict:
+    """Tier 1: Hunt for corporate spin-offs and carve-outs."""
+    label = f"{symbol} ({name or 'N/A'})"
+    price_str = f"${price:.2f}" if price else "unknown"
+
+    user_msg = (
+        f"Search for corporate spin-off or carve-out activity for ticker '{label}' (price ~{price_str}).\n\n"
+        "TIER 1 SPIN-OFF CATALYSTS:\n"
+        "- Announced spin-offs with ex-date scheduled\n"
+        "- Business unit carve-outs creating new publicly traded entities\n"
+        "- Reverse Morris Trust transactions\n\n"
+        "Search:\n"
+        "- SEC Form 10-12B/A registration statements\n"
+        "- SEC Form 8-K spin-off announcements\n"
+        "- Investor presentations mentioning strategic separation\n"
+        "- Proxy statements with spin-off shareholder votes\n\n"
+        "Return JSON:\n"
+        "{\n"
+        '  "spinoff_detected": true/false,\n'
+        '  "event_name": "specific spin-off name",\n'
+        '  "event_date": "YYYY-MM-DD distribution date or empty",\n'
+        '  "expected_window": "Q3 2026" if no exact date,\n'
+        '  "confidence": 0.0-1.0,\n'
+        '  "strategic_summary": "what entity is being spun off and why it\'s undervalued",\n'
+        '  "source_url": "SEC filing or official announcement"\n'
+        "}\n\n"
+        "Only return detected=true if spin-off is officially announced and scheduled within 180 days."
+    )
+
+    instructions = (
+        "Use finance_search for SEC filings and investor presentations. "
+        "Use web_search for spin-off announcements and proxy statements. "
+        "Use fetch_url to pull full Form 10-12B/A or 8-K filings. "
+        "Verify the spin-off is officially announced, not just rumored."
+    )
+
+    base = {
+        "symbol": symbol,
+        "detected": False,
+        "event_name": None,
+        "impact_type": "Spin-off",
+        "expected_window": None,
+        "strategic_summary": None,
+        "source_url": None,
+        "model": _FORWARD_MODEL,
+        "tier": 1,
+        "tier_name": "Systemic Volatility",
+        "confidence_score": None,
+        "sector_targeted": False,
+    }
+
+    try:
+        result = _forward_catalyst_agent_api(symbol, user_msg, instructions)
+        if not result:
+            result = _forward_catalyst_chat_api(symbol, user_msg)
+
+        parsed = _extract_json_from_text(result)
+        detected = parsed.get("spinoff_detected", False)
+
+        return {
+            **base,
+            "detected": detected,
+            "event_name": parsed.get("event_name") if detected else None,
+            "expected_window": parsed.get("expected_window") or parsed.get("event_date") if detected else None,
+            "strategic_summary": parsed.get("strategic_summary") if detected else None,
+            "source_url": parsed.get("source_url") if detected else None,
+            "confidence_score": parsed.get("confidence") if detected else None,
+        }
+    except Exception as exc:  # noqa: BLE001
+        log.warning("tier1 spinoff catalyst failed for %s: %s", symbol, redact(str(exc)))
+        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
