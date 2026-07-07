@@ -21,7 +21,10 @@ env:
     refresh_universe refresh_bars refresh_fundamentals
     detect_winners detect_watchlist_moves enrich_catalysts
     refresh_watchlist refresh_sectors refresh_upcoming_events
-    scan_forward_catalysts compute_strategy_tags weekly
+    scan_forward_catalysts scan_tier1_biotech_catalysts
+    scan_tier1_spinoffs scan_tier2_earnings_contracts
+    scan_tier3_structural_events scan_universe_incremental
+    compute_strategy_tags weekly
 
 jobs:
   build-and-deploy:

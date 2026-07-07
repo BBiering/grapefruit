@@ -20,6 +20,11 @@ from grapefruit.pipelines import (
     refresh_upcoming_events,
     refresh_watchlist,
     scan_forward_catalysts,
+    scan_tier1_biotech_catalysts,
+    scan_tier1_spinoffs,
+    scan_tier2_earnings_contracts,
+    scan_tier3_structural_events,
+    scan_universe_incremental,
 )
 
 
@@ -30,17 +35,25 @@ def run() -> int:
     total = 0
     failures: list[str] = []
     for step in (
-        refresh_universe,
-        refresh_fundamentals,
-        refresh_bars,
-        detect_winners,
-        refresh_watchlist,
-        detect_watchlist_moves,  # after watchlist exists, detects recent moves
-        refresh_sectors,   # after winners/watchlist exist, so it scopes to them
-        enrich_catalysts,
-        refresh_upcoming_events,
-        scan_forward_catalysts,  # after watchlist exists
-        compute_strategy_tags,  # after watchlist + forward_catalysts, computes tags
+        refresh_universe,            # 1. Build universe (with risk flag exclusions)
+        refresh_fundamentals,         # 2. Fetch financials
+        refresh_bars,                 # 3. Fetch price data
+        detect_winners,               # 4. Find steep-rise events
+        refresh_watchlist,            # 5. Build watchlist from screeners
+        detect_watchlist_moves,       # 6. Recent moves in watchlist
+        refresh_sectors,              # 7. Populate sector/industry
+
+        # NEW CATALYST DETECTION PIPELINES
+        scan_tier3_structural_events,  # 8. Reverse splits + index inclusion (EODHD bulk + seasonal Perplexity)
+        scan_tier2_earnings_contracts, # 9. Earnings calendar (EODHD bulk) + contract awards (Perplexity)
+        scan_tier1_biotech_catalysts,  # 10. FDA/trials for biotech sector (Perplexity)
+        scan_tier1_spinoffs,           # 11. Spin-offs for top 300 market cap (Perplexity)
+        scan_universe_incremental,     # 12. Rotate through 250 stocks/week (Perplexity)
+
+        enrich_catalysts,              # 13. Explain past winners
+        refresh_upcoming_events,       # 14. Fetch earnings calendar (legacy, now covered by tier2)
+        scan_forward_catalysts,        # 15. Legacy watchlist scan (keep for compatibility)
+        compute_strategy_tags,         # 16. Generate strategy metadata
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)

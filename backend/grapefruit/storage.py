@@ -847,3 +847,59 @@ def replace_watchlist_moves(rows: list[dict]) -> int:
                     payload,
                 )
     return len(payload)
+
+
+# ---------------------------------------------------------------------------
+# catalyst tiers & comprehensive detection
+# ---------------------------------------------------------------------------
+
+def load_catalysts_summary() -> list[dict]:
+    """Load all detected catalysts with simple yes/no/when/what format.
+
+    Returns catalysts sorted by tier (1-3) and event date (soonest first).
+    Output format for user: symbol, detected, event_type, tier, event_date,
+    expected_impact, description, confidence, source_url.
+    """
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute("""
+            SELECT
+                fc.symbol,
+                fc.detected,
+                fc.event_name AS event_type,
+                fc.tier,
+                ct.tier_name,
+                ct.expected_impact_range AS expected_impact,
+                fc.event_date,
+                fc.expected_window,
+                fc.strategic_summary AS description,
+                fc.confidence_score AS confidence,
+                fc.source_url,
+                a.name,
+                a.sector,
+                a.industry,
+                fc.last_verified_at
+            FROM forward_catalysts fc
+            LEFT JOIN catalyst_tiers ct ON ct.tier = fc.tier
+            JOIN assets a ON a.symbol = fc.symbol
+            WHERE fc.detected = TRUE
+            ORDER BY fc.tier ASC NULLS LAST, fc.event_date ASC NULLS LAST
+        """)
+        return [dict(r) for r in cur.fetchall()]
+
+
+def load_risk_flags() -> list[dict]:
+    """Load all active risk flags (reverse splits, delisting risk, etc.)."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute("""
+            SELECT
+                symbol,
+                flag_type,
+                flag_date,
+                scheduled_date,
+                split_ratio,
+                description,
+                detected_at
+            FROM universe_risk_flags
+            ORDER BY scheduled_date ASC NULLS LAST, detected_at DESC
+        """)
+        return [dict(r) for r in cur.fetchall()]

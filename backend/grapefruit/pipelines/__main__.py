@@ -31,6 +31,11 @@ KNOWN_JOBS = {
     "refresh_sectors",
     "refresh_upcoming_events",
     "scan_forward_catalysts",
+    "scan_tier1_biotech_catalysts",
+    "scan_tier1_spinoffs",
+    "scan_tier2_earnings_contracts",
+    "scan_tier3_structural_events",
+    "scan_universe_incremental",
     "compute_strategy_tags",
     "weekly",
 }
