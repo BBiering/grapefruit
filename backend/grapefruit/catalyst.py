@@ -462,18 +462,13 @@ def tier1_biotech_catalyst(symbol: str, name: str | None = None, price: float | 
         else:
             result = _forward_catalyst_chat_api(base, label, price_str, symbol)
 
-        parsed = _parse_json_response(result)
-        detected = parsed.get("tier1_catalyst_detected", False)
-
+        # result is already a complete dict from the API functions
+        # Just add tier-specific metadata
         return {
-            **base,
-            "detected": detected,
-            "event_name": parsed.get("event_name") if detected else None,
-            "impact_type": parsed.get("event_type") if detected else None,
-            "expected_window": parsed.get("expected_window") or parsed.get("event_date") if detected else None,
-            "strategic_summary": parsed.get("strategic_summary") if detected else None,
-            "source_url": parsed.get("source_url") if detected else None,
-            "confidence_score": parsed.get("confidence") if detected else None,
+            **result,
+            "tier": base["tier"],
+            "tier_name": base["tier_name"],
+            "sector_targeted": base["sector_targeted"],
         }
     except Exception as exc:  # noqa: BLE001
         log.warning("tier1 biotech catalyst failed for %s: %s", symbol, redact(str(exc)))
@@ -541,17 +536,13 @@ def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | 
         else:
             result = _forward_catalyst_chat_api(base, label, price_str, symbol)
 
-        parsed = _parse_json_response(result)
-        detected = parsed.get("spinoff_detected", False)
-
+        # result is already a complete dict from the API functions
+        # Just add tier-specific metadata
         return {
-            **base,
-            "detected": detected,
-            "event_name": parsed.get("event_name") if detected else None,
-            "expected_window": parsed.get("expected_window") or parsed.get("event_date") if detected else None,
-            "strategic_summary": parsed.get("strategic_summary") if detected else None,
-            "source_url": parsed.get("source_url") if detected else None,
-            "confidence_score": parsed.get("confidence") if detected else None,
+            **result,
+            "tier": base["tier"],
+            "tier_name": base["tier_name"],
+            "sector_targeted": base["sector_targeted"],
         }
     except Exception as exc:  # noqa: BLE001
         log.warning("tier1 spinoff catalyst failed for %s: %s", symbol, redact(str(exc)))
