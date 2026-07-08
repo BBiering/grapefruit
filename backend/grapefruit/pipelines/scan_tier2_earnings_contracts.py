@@ -72,14 +72,22 @@ def run() -> int:
 
     # 4. Contract awards scan (defense/IT sector)
     log.info("scanning defense/IT sector for contract awards")
-    defense_it = storage.symbols_by_sector(_DEFENSE_IT_SECTORS)
-    log.info("found %d defense/IT stocks", len(defense_it))
 
-    # TODO: Prioritize by never scanned, stale scans
-    budget = min(_MAX_CONTRACT_SCANS, len(defense_it))
-    contract_targets = defense_it[:budget]
+    # Smart prioritization: only scan never-scanned, approaching events, or stale (>7 days)
+    contract_targets = storage.prioritize_for_catalyst_scan(
+        sectors=_DEFENSE_IT_SECTORS,
+        tier=2,
+        limit=_MAX_CONTRACT_SCANS,
+        stale_after_days=7,
+    )
 
-    log.info("scanning %d defense/IT stocks for contracts (budget: %d)", len(contract_targets), budget)
+    log.info("found %d defense/IT stocks needing contract scan (never scanned, stale >7d, or approaching events)",
+             len(contract_targets))
+
+    if not contract_targets:
+        log.info("no defense/IT stocks need scanning; all recently verified")
+    else:
+        log.info("scanning %d defense/IT stocks for contracts (budget: %d)", len(contract_targets), _MAX_CONTRACT_SCANS)
 
     # TODO: Implement contract award detection with Perplexity
     # For now, skip

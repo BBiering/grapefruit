@@ -23,33 +23,25 @@ _MAX_SCANS_PER_RUN = 250  # Budget: 250 stocks/week = full universe every 8 week
 
 def run() -> int:
     """Incrementally scan universe for generic catalysts with prioritization."""
-    # Get prioritized candidates from storage
-    # TODO: Implement storage.prioritize_universe_for_scanning()
-    # For now, use a simple approach: get all assets, take first 250
-
     log.info("fetching universe for incremental catalyst scanning")
 
-    # Placeholder: just get first 250 symbols from assets
-    # In production, this would use the prioritization query from the plan
-    with storage._cur(row_factory=storage.dict_row) as cur:
-        cur.execute("""
-            SELECT
-                a.symbol,
-                a.name,
-                b.close as last_close
-            FROM assets a
-            LEFT JOIN LATERAL (
-                SELECT close FROM bars
-                WHERE symbol = a.symbol
-                ORDER BY ts DESC
-                LIMIT 1
-            ) b ON true
-            ORDER BY a.symbol
-            LIMIT %s
-        """, [_MAX_SCANS_PER_RUN])
-        candidates = [dict(r) for r in cur.fetchall()]
+    # Smart prioritization: only scan never-scanned, approaching events, or stale (>7 days)
+    # No sector filter (all sectors), no tier filter (generic scan)
+    candidates = storage.prioritize_for_catalyst_scan(
+        sectors=None,  # All sectors
+        tier=None,     # No tier filter (generic forward_catalyst scan)
+        limit=_MAX_SCANS_PER_RUN,
+        stale_after_days=7,
+    )
 
-    log.info("scanning %d universe stocks incrementally", len(candidates))
+    log.info("found %d universe stocks needing scan (never scanned, stale >7d, or approaching events)",
+             len(candidates))
+
+    if not candidates:
+        log.info("no stocks need scanning; entire universe recently verified")
+        return 0
+
+    log.info("scanning %d universe stocks incrementally (budget: %d)", len(candidates), _MAX_SCANS_PER_RUN)
 
     results = []
     detected_count = 0
@@ -71,7 +63,9 @@ def run() -> int:
 
         results.append(result)
 
-    log.info("incremental universe scan complete: %d/%d catalysts detected", detected_count, len(results))
+    # Store results with last_verified_at timestamp (no tier for generic scans)
+    stored = storage.upsert_catalysts_with_tier(results)
+    log.info("incremental universe scan complete: %d/%d catalysts detected, %d stored",
+             detected_count, len(results), stored)
 
-    # TODO: Implement storage.upsert_catalysts with tier=None for generic scans
     return detected_count

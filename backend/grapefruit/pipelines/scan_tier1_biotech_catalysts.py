@@ -23,23 +23,22 @@ _MAX_SCANS_PER_RUN = 200  # Budget: 200 Perplexity calls/week for biotech
 
 def run() -> int:
     """Scan biotech sector for Tier 1 FDA/clinical trial catalysts."""
-    # Get biotech/pharma stocks from assets table
-    biotech_symbols = storage.symbols_by_sector(_BIOTECH_SECTORS)
-    log.info("found %d biotech/pharma stocks in universe", len(biotech_symbols))
+    # Smart prioritization: only scan never-scanned, approaching events, or stale (>7 days)
+    targets = storage.prioritize_for_catalyst_scan(
+        sectors=_BIOTECH_SECTORS,
+        tier=1,
+        limit=_MAX_SCANS_PER_RUN,
+        stale_after_days=7,
+    )
 
-    if not biotech_symbols:
-        log.warning("no biotech stocks found; skipping Tier 1 biotech scan")
+    log.info("found %d biotech stocks needing catalyst scan (never scanned, stale >7d, or approaching events)",
+             len(targets))
+
+    if not targets:
+        log.info("no biotech stocks need scanning; all recently verified")
         return 0
 
-    # Prioritize: never scanned or stale scans (>7 days)
-    # TODO: Implement proper prioritization query in storage.py
-    # For now, just take first N (optimization: check last_verified_at in forward_catalysts)
-    budget = min(_MAX_SCANS_PER_RUN, len(biotech_symbols))
-    targets = biotech_symbols[:budget]
-
-    log.info("NOTE: Full scan mode - consider optimizing to skip recently scanned stocks")
-
-    log.info("scanning %d biotech stocks (budget: %d)", len(targets), budget)
+    log.info("scanning %d biotech stocks (budget: %d)", len(targets), _MAX_SCANS_PER_RUN)
 
     results = []
     detected_count = 0
@@ -60,9 +59,9 @@ def run() -> int:
 
         results.append(result)
 
-    # Store results (would need storage.replace_catalysts with tier support)
-    log.info("tier1 biotech scan complete: %d/%d catalysts detected", detected_count, len(results))
+    # Store results with tier metadata and last_verified_at timestamp
+    stored = storage.upsert_catalysts_with_tier(results)
+    log.info("tier1 biotech scan complete: %d/%d catalysts detected, %d stored",
+             detected_count, len(results), stored)
 
-    # TODO: Implement storage.upsert_catalysts_with_tier(results, tier=1)
-    # For now, just return count
     return detected_count

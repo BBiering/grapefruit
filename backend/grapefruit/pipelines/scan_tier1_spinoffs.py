@@ -21,15 +21,23 @@ _MAX_SCANS_PER_RUN = 300  # Budget: 300 Perplexity calls/week for spin-offs
 
 def run() -> int:
     """Scan top market cap stocks for Tier 1 spin-off catalysts."""
-    # Get top 300 stocks by market cap (spin-offs come from larger companies)
-    top_stocks = storage.top_symbols_by_market_cap(limit=_MAX_SCANS_PER_RUN)
-    log.info("found %d top market cap stocks", len(top_stocks))
+    # Smart prioritization: only scan never-scanned, approaching events, or stale (>7 days)
+    # No sector filter (spin-offs can come from any sector, but prioritize by market cap)
+    targets = storage.prioritize_for_catalyst_scan(
+        sectors=None,  # All sectors
+        tier=1,
+        limit=_MAX_SCANS_PER_RUN,
+        stale_after_days=7,
+    )
 
-    if not top_stocks:
-        log.warning("no stocks found; skipping Tier 1 spin-off scan")
+    log.info("found %d stocks needing spin-off scan (never scanned, stale >7d, or approaching events)",
+             len(targets))
+
+    if not targets:
+        log.info("no stocks need scanning; all recently verified")
         return 0
 
-    log.info("scanning %d stocks for spin-offs", len(top_stocks))
+    log.info("scanning %d stocks for spin-offs (budget: %d)", len(targets), _MAX_SCANS_PER_RUN)
 
     results = []
     detected_count = 0
@@ -50,7 +58,9 @@ def run() -> int:
 
         results.append(result)
 
-    log.info("tier1 spinoff scan complete: %d/%d catalysts detected", detected_count, len(results))
+    # Store results with tier metadata and last_verified_at timestamp
+    stored = storage.upsert_catalysts_with_tier(results)
+    log.info("tier1 spinoff scan complete: %d/%d catalysts detected, %d stored",
+             detected_count, len(results), stored)
 
-    # TODO: Implement storage.upsert_catalysts_with_tier(results, tier=1)
     return detected_count

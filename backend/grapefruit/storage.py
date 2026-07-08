@@ -502,6 +502,81 @@ def top_symbols_by_market_cap(limit: int = 300) -> list[dict]:
         return [dict(r) for r in cur.fetchall()]
 
 
+def prioritize_for_catalyst_scan(
+    sectors: list[str] | None = None,
+    tier: int | None = None,
+    limit: int = 200,
+    stale_after_days: int = 7,
+) -> list[dict]:
+    """Returns stocks prioritized for catalyst scanning.
+
+    Priority order:
+    1. Never scanned (forward_catalysts.last_verified_at IS NULL)
+    2. Approaching events (event_date within 14 days, needs re-verification)
+    3. Stale scans (last_verified_at older than stale_after_days)
+
+    Args:
+        sectors: Filter by sectors (e.g., ["Biotechnology", "Pharmaceuticals"])
+        tier: Filter by catalyst tier (1, 2, or 3) - None means no tier filter
+        limit: Max number of stocks to return
+        stale_after_days: Consider scans older than this many days as stale
+
+    Returns:
+        List of stocks with symbol, name, sector, last_close, last_verified_at, event_date
+    """
+    with _cur(row_factory=dict_row) as cur:
+        # Build filters
+        sector_filter = "AND a.sector = ANY(%s)" if sectors else ""
+        tier_filter = "AND (fc.tier = %s OR fc.tier IS NULL)" if tier is not None else ""
+
+        # Build parameter list dynamically
+        params = []
+        if sectors:
+            params.append(sectors)
+        if tier is not None:
+            params.append(tier)
+        params.extend([stale_after_days, limit])
+
+        cur.execute(f"""
+            SELECT
+                a.symbol,
+                a.name,
+                a.sector,
+                a.industry,
+                a.market_cap_usd,
+                b.close as last_close,
+                fc.last_verified_at,
+                fc.event_date,
+                fc.tier
+            FROM assets a
+            LEFT JOIN LATERAL (
+                SELECT close FROM bars WHERE symbol = a.symbol ORDER BY ts DESC LIMIT 1
+            ) b ON true
+            LEFT JOIN forward_catalysts fc ON fc.symbol = a.symbol
+            WHERE 1=1 {sector_filter} {tier_filter}
+              AND (
+                  -- Never scanned (highest priority)
+                  fc.last_verified_at IS NULL
+                  OR
+                  -- Approaching event date (needs re-verification)
+                  (fc.event_date IS NOT NULL AND fc.event_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 14)
+                  OR
+                  -- Stale scan (last verified more than N days ago)
+                  fc.last_verified_at < NOW() - (%s::int * INTERVAL '1 day')
+              )
+            ORDER BY
+                CASE
+                    WHEN fc.last_verified_at IS NULL THEN 1  -- Never scanned first
+                    WHEN fc.event_date BETWEEN CURRENT_DATE AND CURRENT_DATE + 14 THEN 2  -- Approaching events second
+                    ELSE 3  -- Stale scans last
+                END,
+                fc.last_verified_at ASC NULLS FIRST,
+                a.market_cap_usd DESC NULLS LAST
+            LIMIT %s
+        """, params)
+        return [dict(r) for r in cur.fetchall()]
+
+
 def symbols_with_market_cap_below(cap_usd: float) -> list[str]:
     with _cur() as cur:
         cur.execute(
@@ -927,3 +1002,61 @@ def load_risk_flags() -> list[dict]:
             ORDER BY scheduled_date ASC NULLS LAST, detected_at DESC
         """)
         return [dict(r) for r in cur.fetchall()]
+
+
+def upsert_catalysts_with_tier(catalysts: list[dict]) -> int:
+    """Upsert catalyst results with tier metadata and last_verified_at timestamp.
+
+    Each catalyst dict should have:
+    - symbol (required)
+    - detected (required)
+    - event_name, impact_type, expected_window, strategic_summary, source_url (optional)
+    - tier, tier_name, confidence_score, sector_targeted (optional)
+    - model (optional, defaults to "sonar-pro")
+    """
+    if not catalysts:
+        return 0
+
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.executemany(
+                """
+                INSERT INTO forward_catalysts
+                    (symbol, detected, event_name, impact_type, expected_window,
+                     strategic_summary, source_url, model, scanned_at,
+                     tier, tier_name, confidence_score, sector_targeted, last_verified_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol) DO UPDATE SET
+                    detected = EXCLUDED.detected,
+                    event_name = EXCLUDED.event_name,
+                    impact_type = EXCLUDED.impact_type,
+                    expected_window = EXCLUDED.expected_window,
+                    strategic_summary = EXCLUDED.strategic_summary,
+                    source_url = EXCLUDED.source_url,
+                    model = EXCLUDED.model,
+                    scanned_at = EXCLUDED.scanned_at,
+                    tier = EXCLUDED.tier,
+                    tier_name = EXCLUDED.tier_name,
+                    confidence_score = EXCLUDED.confidence_score,
+                    sector_targeted = EXCLUDED.sector_targeted,
+                    last_verified_at = EXCLUDED.last_verified_at
+                """,
+                [
+                    (
+                        c["symbol"],
+                        c.get("detected", False),
+                        c.get("event_name"),
+                        c.get("impact_type"),
+                        c.get("expected_window"),
+                        c.get("strategic_summary"),
+                        c.get("source_url"),
+                        c.get("model", "sonar-pro"),
+                        c.get("tier"),
+                        c.get("tier_name"),
+                        c.get("confidence_score"),
+                        c.get("sector_targeted", False),
+                    )
+                    for c in catalysts
+                ],
+            )
+    return len(catalysts)
