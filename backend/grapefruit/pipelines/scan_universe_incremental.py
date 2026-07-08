@@ -33,8 +33,17 @@ def run() -> int:
     # In production, this would use the prioritization query from the plan
     with storage._cur(row_factory=storage.dict_row) as cur:
         cur.execute("""
-            SELECT a.symbol, a.name, a.last_close
+            SELECT
+                a.symbol,
+                a.name,
+                b.close as last_close
             FROM assets a
+            LEFT JOIN LATERAL (
+                SELECT close FROM bars
+                WHERE symbol = a.symbol
+                ORDER BY ts DESC
+                LIMIT 1
+            ) b ON true
             ORDER BY a.symbol
             LIMIT %s
         """, [_MAX_SCANS_PER_RUN])

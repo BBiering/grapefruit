@@ -411,10 +411,22 @@ def symbols_by_sector(sectors: list[str]) -> list[dict]:
     with _cur(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT symbol, name, sector, industry, market_cap_usd, last_close
-            FROM assets
-            WHERE sector = ANY(%s)
-            ORDER BY market_cap_usd DESC NULLS LAST
+            SELECT
+                a.symbol,
+                a.name,
+                a.sector,
+                a.industry,
+                a.market_cap_usd,
+                b.close as last_close
+            FROM assets a
+            LEFT JOIN LATERAL (
+                SELECT close FROM bars
+                WHERE symbol = a.symbol
+                ORDER BY ts DESC
+                LIMIT 1
+            ) b ON true
+            WHERE a.sector = ANY(%s)
+            ORDER BY a.market_cap_usd DESC NULLS LAST
             """,
             [sectors],
         )
@@ -467,10 +479,22 @@ def top_symbols_by_market_cap(limit: int = 300) -> list[dict]:
     with _cur(row_factory=dict_row) as cur:
         cur.execute(
             """
-            SELECT symbol, name, sector, industry, market_cap_usd, last_close
-            FROM assets
-            WHERE market_cap_usd IS NOT NULL AND market_cap_usd > 0
-            ORDER BY market_cap_usd DESC
+            SELECT
+                a.symbol,
+                a.name,
+                a.sector,
+                a.industry,
+                a.market_cap_usd,
+                b.close as last_close
+            FROM assets a
+            LEFT JOIN LATERAL (
+                SELECT close FROM bars
+                WHERE symbol = a.symbol
+                ORDER BY ts DESC
+                LIMIT 1
+            ) b ON true
+            WHERE a.market_cap_usd IS NOT NULL AND a.market_cap_usd > 0
+            ORDER BY a.market_cap_usd DESC
             LIMIT %s
             """,
             [limit],

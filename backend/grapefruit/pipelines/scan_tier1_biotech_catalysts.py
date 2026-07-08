@@ -31,10 +31,13 @@ def run() -> int:
         log.warning("no biotech stocks found; skipping Tier 1 biotech scan")
         return 0
 
-    # TODO: Prioritize by: never scanned, stale scans (>30 days), small-cap (<$2B)
-    # For now, just take first N
+    # Prioritize: never scanned or stale scans (>7 days)
+    # TODO: Implement proper prioritization query in storage.py
+    # For now, just take first N (optimization: check last_verified_at in forward_catalysts)
     budget = min(_MAX_SCANS_PER_RUN, len(biotech_symbols))
     targets = biotech_symbols[:budget]
+
+    log.info("NOTE: Full scan mode - consider optimizing to skip recently scanned stocks")
 
     log.info("scanning %d biotech stocks (budget: %d)", len(targets), budget)
 

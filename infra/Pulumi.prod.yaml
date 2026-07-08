@@ -1,8 +1,19 @@
+encryptionsalt: v1:EwEWUggjZwA=:v1:OQ2qF0KBMCp8Y652:IZYMnGS9zUHaGgSMaoiQxyfSqiB9Xw==
 config:
-  # Intentionally config-free. Do NOT commit project IDs or secrets here.
-  #
-  # The "Set config from GitHub secrets" step in
-  # .github/workflows/pulumi-up.yml runs `pulumi config set` for all six
-  # values (gcp:project, gcp:region, image_uri, and the three secrets) from
-  # GitHub repo secrets at runtime. Secrets are encrypted at rest in the GCS
-  # state with PULUMI_CONFIG_PASSPHRASE. See infra/README.md.
+  gcp:project: grapefruit-500208
+  gcp:region: europe-west4
+  grapefruit-infra:image_uri: europe-west4-docker.pkg.dev/grapefruit-500208/grapefruit-pipelines/grapefruit-pipelines:latest
+  grapefruit-infra:eodhd_api_key:
+    secure: v1:VeUvaw9Oevi6mKBw:7U/KOvm4knI4h+rTRYlVLqsE+D4Uq+/v9B2gAJpSNRltvJk3inuS
+  grapefruit-infra:perplexity_api_key:
+    secure: v1:xx1N/8yi+RiFX0hd:jsVdsYmktV5R4gGLc3cipoYUuypSYQysocNVOXaiNRAuZnnj0vpd6ifZssKYCvJ6m3e0x7/zZ+u4N0UBkxgDUtGa3Feq
+  grapefruit-infra:database_url:
+    secure: v1:6+OGZ8sxvS7gwWio:gxGlHf/cWZKOTa+X/zfNUsezTl45LyZqVKe/TFD12vh7pQOrZtQn8qdJntkta1qCMJph7ITfi4cy+TbJWAE+p5cJDEn7XXVpG7yc7lWbKnqQiuSDHvZFMzFY7bfcMXPtXZ6DOV+9NO6KQlM9
+
+# Intentionally config-free. Do NOT commit project IDs or secrets here.
+#
+# The "Set config from GitHub secrets" step in
+# .github/workflows/pulumi-up.yml runs `pulumi config set` for all six
+# values (gcp:project, gcp:region, image_uri, and the three secrets) from
+# GitHub repo secrets at runtime. Secrets are encrypted at rest in the GCS
+# state with PULUMI_CONFIG_PASSPHRASE. See infra/README.md.
