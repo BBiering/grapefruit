@@ -452,10 +452,15 @@ def tier1_biotech_catalyst(symbol: str, name: str | None = None, price: float | 
         "sector_targeted": True,
     }
 
+    label = f"{symbol} ({name})" if name else symbol
+    price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
+
     try:
-        result = _forward_catalyst_agent_api(symbol, user_msg, instructions)
-        if not result:
-            result = _forward_catalyst_chat_api(symbol, user_msg)
+        client = _get_perplexity_client()
+        if client:
+            result = _forward_catalyst_agent_api(client, base, label, price_str, symbol)
+        else:
+            result = _forward_catalyst_chat_api(base, label, price_str, symbol)
 
         parsed = _extract_json_from_text(result)
         detected = parsed.get("tier1_catalyst_detected", False)
@@ -526,10 +531,15 @@ def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | 
         "sector_targeted": False,
     }
 
+    label = f"{symbol} ({name})" if name else symbol
+    price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
+
     try:
-        result = _forward_catalyst_agent_api(symbol, user_msg, instructions)
-        if not result:
-            result = _forward_catalyst_chat_api(symbol, user_msg)
+        client = _get_perplexity_client()
+        if client:
+            result = _forward_catalyst_agent_api(client, base, label, price_str, symbol)
+        else:
+            result = _forward_catalyst_chat_api(base, label, price_str, symbol)
 
         parsed = _extract_json_from_text(result)
         detected = parsed.get("spinoff_detected", False)

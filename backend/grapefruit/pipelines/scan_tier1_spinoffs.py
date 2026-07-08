@@ -42,7 +42,7 @@ def run() -> int:
     results = []
     detected_count = 0
 
-    for i, stock in enumerate(top_stocks, start=1):
+    for i, stock in enumerate(targets, start=1):
         symbol = stock["symbol"]
         name = stock.get("name")
         price = stock.get("last_close")
