@@ -462,7 +462,7 @@ def tier1_biotech_catalyst(symbol: str, name: str | None = None, price: float | 
         else:
             result = _forward_catalyst_chat_api(base, label, price_str, symbol)
 
-        parsed = _extract_json_from_text(result)
+        parsed = _parse_json_response(result)
         detected = parsed.get("tier1_catalyst_detected", False)
 
         return {
@@ -541,7 +541,7 @@ def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | 
         else:
             result = _forward_catalyst_chat_api(base, label, price_str, symbol)
 
-        parsed = _extract_json_from_text(result)
+        parsed = _parse_json_response(result)
         detected = parsed.get("spinoff_detected", False)
 
         return {
