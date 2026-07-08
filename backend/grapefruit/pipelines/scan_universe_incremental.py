@@ -63,15 +63,31 @@ def run() -> int:
 
         # Store incrementally every batch_size stocks to avoid losing progress on timeout
         if i % batch_size == 0:
-            stored = storage.upsert_catalysts_with_tier(results)
-            log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
-                     i, len(candidates), detected_count, stored)
-            results = []  # Clear batch
+            for retry in range(3):
+                try:
+                    stored = storage.upsert_catalysts_with_tier(results)
+                    log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
+                             i, len(candidates), detected_count, stored)
+                    results = []
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("batch storage failed (attempt %d/3): %s", retry + 1, exc)
+                    if retry < 2:
+                        import time
+                        time.sleep(2 ** retry)
 
-    # Store final batch
+    # Store final batch with retry
     if results:
-        stored = storage.upsert_catalysts_with_tier(results)
-        log.info("stored final batch: %d results", stored)
+        for retry in range(3):
+            try:
+                stored = storage.upsert_catalysts_with_tier(results)
+                log.info("stored final batch: %d results", stored)
+                break
+            except Exception as exc:  # noqa: BLE001
+                log.warning("final batch storage failed (attempt %d/3): %s", retry + 1, exc)
+                if retry < 2:
+                    import time
+                    time.sleep(2 ** retry)
 
     log.info("incremental universe scan complete: %d/%d catalysts detected", detected_count, len(candidates))
 

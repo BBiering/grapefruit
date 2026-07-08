@@ -59,15 +59,34 @@ def run() -> int:
 
         # Store incrementally every batch_size stocks to avoid losing progress on timeout
         if i % batch_size == 0:
-            stored = storage.upsert_catalysts_with_tier(results)
-            log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
-                     i, len(targets), detected_count, stored)
-            results = []  # Clear batch
+            # Retry storage up to 3 times on connection errors
+            for retry in range(3):
+                try:
+                    stored = storage.upsert_catalysts_with_tier(results)
+                    log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
+                             i, len(targets), detected_count, stored)
+                    results = []  # Clear batch only on successful save
+                    break
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("batch storage failed (attempt %d/3): %s", retry + 1, exc)
+                    if retry == 2:
+                        log.error("batch storage failed after 3 attempts; keeping results for next batch")
+                    else:
+                        import time
+                        time.sleep(2 ** retry)  # Exponential backoff: 1s, 2s
 
-    # Store final batch
+    # Store final batch with retry
     if results:
-        stored = storage.upsert_catalysts_with_tier(results)
-        log.info("stored final batch: %d results", stored)
+        for retry in range(3):
+            try:
+                stored = storage.upsert_catalysts_with_tier(results)
+                log.info("stored final batch: %d results", stored)
+                break
+            except Exception as exc:  # noqa: BLE001
+                log.warning("final batch storage failed (attempt %d/3): %s", retry + 1, exc)
+                if retry < 2:
+                    import time
+                    time.sleep(2 ** retry)
 
     log.info("tier1 biotech scan complete: %d/%d catalysts detected", detected_count, len(targets))
 
