@@ -39,9 +39,7 @@ def run() -> int:
 
     log.info("scanning %d stocks for spin-offs (budget: %d)", len(targets), _MAX_SCANS_PER_RUN)
 
-    results = []
     detected_count = 0
-    batch_size = 50  # Store results every 50 stocks to avoid losing progress on timeout
 
     for i, stock in enumerate(targets, start=1):
         symbol = stock["symbol"]
@@ -54,32 +52,16 @@ def run() -> int:
             detected_count += 1
             log.info("DETECTED: %s - %s (%s)", symbol, result.get("event_name"), result.get("expected_window"))
 
-        results.append(result)
-
-        # Store incrementally every batch_size stocks to avoid losing progress on timeout
-        if i % batch_size == 0:
-            for retry in range(3):
-                try:
-                    stored = storage.upsert_catalysts_with_tier(results)
-                    log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
-                             i, len(targets), detected_count, stored)
-                    results = []
-                    break
-                except Exception as exc:  # noqa: BLE001
-                    log.warning("batch storage failed (attempt %d/3): %s", retry + 1, exc)
-                    if retry < 2:
-                        import time
-                        time.sleep(2 ** retry)
-
-    # Store final batch with retry
-    if results:
+        # Store immediately after each fetch with retry
         for retry in range(3):
             try:
-                stored = storage.upsert_catalysts_with_tier(results)
-                log.info("stored final batch: %d results", stored)
+                stored = storage.upsert_catalysts_with_tier([result])
+                if i % 10 == 0:  # Log progress every 10 stocks
+                    log.info("progress: %d/%d scanned, %d catalysts detected",
+                             i, len(targets), detected_count)
                 break
             except Exception as exc:  # noqa: BLE001
-                log.warning("final batch storage failed (attempt %d/3): %s", retry + 1, exc)
+                log.warning("storage failed for %s (attempt %d/3): %s", symbol, retry + 1, exc)
                 if retry < 2:
                     import time
                     time.sleep(2 ** retry)
