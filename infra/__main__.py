@@ -64,8 +64,14 @@ JOB_NAMES = [
     "weekly",
 ]
 
-# Per-job overrides: weekly is the long orchestrator.
-TIMEOUTS = {"weekly": "7200s"}   # 2h
+# Per-job overrides: weekly is the long orchestrator, catalyst scans need more time.
+TIMEOUTS = {
+    "weekly": "7200s",                          # 2h
+    "scan_tier1_biotech_catalysts": "3600s",    # 1h (200 stocks × ~10s = 33+ min)
+    "scan_tier1_spinoffs": "5400s",             # 1.5h (300 stocks × ~10s = 50+ min)
+    "scan_universe_incremental": "3600s",       # 1h (250 stocks × ~10s = 42+ min)
+    "scan_tier2_earnings_contracts": "2700s",   # 45min (150 stocks × ~10s = 25+ min)
+}
 DEFAULT_TIMEOUT = "1800s"        # 30m
 DEFAULT_MEMORY = "1Gi"
 DEFAULT_CPU = "1"

@@ -45,14 +45,12 @@ def run() -> int:
 
     results = []
     detected_count = 0
+    batch_size = 50  # Store results every 50 stocks to avoid losing progress on timeout
 
     for i, stock in enumerate(candidates, start=1):
         symbol = stock["symbol"]
         name = stock.get("name")
         price = stock.get("last_close")
-
-        if i % 50 == 0:
-            log.info("progress: %d/%d scanned, %d catalysts detected", i, len(candidates), detected_count)
 
         # Use generic forward_catalyst scan (existing function)
         result = catalyst.forward_catalyst(symbol, name, price)
@@ -63,9 +61,18 @@ def run() -> int:
 
         results.append(result)
 
-    # Store results with last_verified_at timestamp (no tier for generic scans)
-    stored = storage.upsert_catalysts_with_tier(results)
-    log.info("incremental universe scan complete: %d/%d catalysts detected, %d stored",
-             detected_count, len(results), stored)
+        # Store incrementally every batch_size stocks to avoid losing progress on timeout
+        if i % batch_size == 0:
+            stored = storage.upsert_catalysts_with_tier(results)
+            log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
+                     i, len(candidates), detected_count, stored)
+            results = []  # Clear batch
+
+    # Store final batch
+    if results:
+        stored = storage.upsert_catalysts_with_tier(results)
+        log.info("stored final batch: %d results", stored)
+
+    log.info("incremental universe scan complete: %d/%d catalysts detected", detected_count, len(candidates))
 
     return detected_count

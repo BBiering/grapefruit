@@ -41,14 +41,12 @@ def run() -> int:
 
     results = []
     detected_count = 0
+    batch_size = 50  # Store results every 50 stocks to avoid losing progress on timeout
 
     for i, stock in enumerate(targets, start=1):
         symbol = stock["symbol"]
         name = stock.get("name")
         price = stock.get("last_close")
-
-        if i % 50 == 0:
-            log.info("progress: %d/%d scanned, %d catalysts detected", i, len(top_stocks), detected_count)
 
         result = catalyst.tier1_spinoff_catalyst(symbol, name, price)
 
@@ -58,9 +56,18 @@ def run() -> int:
 
         results.append(result)
 
-    # Store results with tier metadata and last_verified_at timestamp
-    stored = storage.upsert_catalysts_with_tier(results)
-    log.info("tier1 spinoff scan complete: %d/%d catalysts detected, %d stored",
-             detected_count, len(results), stored)
+        # Store incrementally every batch_size stocks to avoid losing progress on timeout
+        if i % batch_size == 0:
+            stored = storage.upsert_catalysts_with_tier(results)
+            log.info("progress: %d/%d scanned, %d catalysts detected, %d stored (batch)",
+                     i, len(targets), detected_count, stored)
+            results = []  # Clear batch
+
+    # Store final batch
+    if results:
+        stored = storage.upsert_catalysts_with_tier(results)
+        log.info("stored final batch: %d results", stored)
+
+    log.info("tier1 spinoff scan complete: %d/%d catalysts detected", detected_count, len(targets))
 
     return detected_count
