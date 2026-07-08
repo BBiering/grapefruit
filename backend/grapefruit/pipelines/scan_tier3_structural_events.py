@@ -60,11 +60,23 @@ def run() -> int:
 
     for split in splits:
         code = split.get("code")
-        ratio = split.get("split")
-        split_date = split.get("date")
+        split_date = split.get("date") or split.get("split_date")
 
-        if not code or not ratio or not split_date:
-            log.warning("incomplete split data: %s", split)
+        # Handle two API formats: "split" ratio string OR "old_shares"/"new_shares" numbers
+        ratio = split.get("split")
+        old_shares = split.get("old_shares")
+        new_shares = split.get("new_shares")
+
+        if not code or not split_date:
+            log.warning("incomplete split data (missing code or date): %s", split)
+            continue
+
+        # Construct ratio from old_shares/new_shares if ratio not provided
+        if not ratio and old_shares and new_shares:
+            ratio = f"{new_shares}:{old_shares}"
+
+        if not ratio:
+            log.warning("incomplete split data (no ratio): %s", split)
             continue
 
         symbol = f"{code}.US"
