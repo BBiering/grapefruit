@@ -16,7 +16,7 @@ from grapefruit import catalyst, storage
 
 log = logging.getLogger(__name__)
 
-_MAX_SCANS_PER_RUN = 300  # Budget: 300 Perplexity calls/week for spin-offs
+_MAX_SCANS_PER_RUN = 150  # Budget: 150 per run to avoid timeout (300 weekly across 2 runs)
 
 
 def run() -> int:

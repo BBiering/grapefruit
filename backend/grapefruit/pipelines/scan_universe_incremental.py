@@ -18,7 +18,7 @@ from grapefruit import catalyst, storage
 
 log = logging.getLogger(__name__)
 
-_MAX_SCANS_PER_RUN = 250  # Budget: 250 stocks/week = full universe every 8 weeks
+_MAX_SCANS_PER_RUN = 120  # Budget: 120 per run to avoid timeout (full universe over time)
 
 
 def run() -> int:
