@@ -73,13 +73,18 @@ def run() -> int:
 
         # Construct ratio from old_shares/new_shares if ratio not provided
         if not ratio and old_shares and new_shares:
+            # Skip invalid data where new_shares is 0 (delisting, not a split)
+            if new_shares <= 0:
+                log.warning("incomplete split data (invalid new_shares): %s", split)
+                continue
             ratio = f"{new_shares}:{old_shares}"
 
         if not ratio:
             log.warning("incomplete split data (no ratio): %s", split)
             continue
 
-        symbol = f"{code}.US"
+        # Extract exchange from code (e.g., "002630.KQ" -> "KQ")
+        symbol = code if "." in code else f"{code}.US"
 
         try:
             if is_reverse_split(ratio):
@@ -100,10 +105,18 @@ def run() -> int:
     log.info("identified %d reverse splits (risk flags), %d forward splits (benign)",
              len(reverse_splits), len(forward_splits))
 
-    # 3. Store risk flags for reverse splits
+    # 3. Filter reverse splits to only include symbols in our universe (to avoid FK violations)
     if reverse_splits:
-        stored = storage.upsert_risk_flags(reverse_splits)
-        log.info("stored %d reverse split risk flags", stored)
+        universe_symbols = set(storage.load_assets_map().keys())
+        filtered_splits = [rs for rs in reverse_splits if rs["symbol"] in universe_symbols]
+
+        if len(filtered_splits) < len(reverse_splits):
+            log.info("filtered out %d reverse splits for symbols not in universe",
+                     len(reverse_splits) - len(filtered_splits))
+
+        if filtered_splits:
+            stored = storage.upsert_risk_flags(filtered_splits)
+            log.info("stored %d reverse split risk flags", stored)
 
     # 4. Seasonal index inclusion scan (June/December only)
     # TODO: Implement Perplexity scan for Russell 2000 / S&P SmallCap 600 rebalancing
