@@ -39,7 +39,6 @@ def run() -> int:
     if not assets:
         log.warning("no symbols in `assets`; run refresh_universe first")
         return 0
-    momentum = storage.momentum_180d_all()
 
     # ---- step 1-2: build candidates from all universe symbols ----------------
     candidates: list[dict] = []
@@ -64,16 +63,12 @@ def run() -> int:
                 continue
             usd_price = float(close) * factor
             usd_dv = float(close) * float(volume) * factor
-            mom = momentum.get(symbol)
-            if mom is None:
-                mom = 0.0  # default to 0 if no history (will rank low)
             candidates.append(
                 {
                     "symbol": symbol,
                     "exchange": exchange,
                     "usd_price": usd_price,
                     "dollar_volume": usd_dv,
-                    "momentum_180d": mom,
                     "meta": meta,
                 }
             )
@@ -114,25 +109,10 @@ def run() -> int:
 
     # ---- step 6: compute combined score and rank ----------------------------
     pool = quality_filtered
-    moms = np.array([c["momentum_180d"] for c in pool])
     for c in pool:
-        ni, pm = eodhd_client.fundamentals_highlights(
-            eodhd_client.fetch_fundamentals(c["symbol"])
-        )
-        c["net_income"] = ni
-        c["profit_margin"] = pm
-        c["quality_score"] = screening.quality_score(ni, pm)
-        c["insider_score"] = screening.insider_score(
-            eodhd_client.fetch_insider_transactions(c["symbol"])
-        )
-
-    # ---- step 5: combined score (momentum percentile within the pool) -------
-    moms = np.array([c["momentum_180d"] for c in pool])
-    for c in pool:
-        pct_rank = float((moms < c["momentum_180d"]).mean() * 100.0)
-        c["momentum_score"] = pct_rank
+        # Combined score: 60% quality, 40% insider activity
         c["combined_score"] = screening.combined_score(
-            pct_rank, c["quality_score"], c["insider_score"]
+            c["quality_score"], c["insider_score"]
         )
 
     pool.sort(key=lambda c: c["combined_score"], reverse=True)
@@ -145,10 +125,8 @@ def run() -> int:
             "market_cap_usd": c["meta"].get("market_cap_usd"),
             "sector": c["meta"].get("sector"),
             "industry": c["meta"].get("industry"),
-            "why_listed": "screened_liquid_momentum",
+            "why_listed": "screened_quality_insider",
             "dollar_volume": c["dollar_volume"],
-            "momentum_180d": c["momentum_180d"],
-            "momentum_score": c["momentum_score"],
             "quality_score": c["quality_score"],
             "insider_score": c["insider_score"],
             "combined_score": c["combined_score"],

@@ -1,7 +1,7 @@
 """Compute strategy alignment tags for watchlist stocks.
 
 Runs after watchlist + forward_catalysts are populated.
-Updates the strategy_tag column based on momentum/quality/catalyst alignment.
+Updates the strategy_tag column based on quality/catalyst alignment.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ def run() -> int:
     with storage._cur(row_factory=storage.dict_row) as cur:
         cur.execute(
             """
-            SELECT w.symbol, w.momentum_score, w.quality_score,
+            SELECT w.symbol, w.quality_score,
                    fc.detected as catalyst_detected
             FROM watchlist w
             LEFT JOIN forward_catalysts fc ON fc.symbol = w.symbol
@@ -36,7 +36,6 @@ def run() -> int:
     tag_counts = {"Buy Manually": 0, "Watchlist": 0, "Pass": 0}
     for r in rows:
         tag = strategy_alignment.compute_strategy_tag(
-            momentum_score=r["momentum_score"],
             quality_score=r["quality_score"],
             catalyst_detected=r["catalyst_detected"],
         )

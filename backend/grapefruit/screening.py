@@ -1,8 +1,7 @@
 """Pure scoring functions for the look-ahead screener. No I/O — unit-testable.
 
-Currency note: momentum is a price *ratio*, so it's currency-independent and
-needs no FX conversion. Only absolute thresholds (price band, dollar-volume)
-require USD conversion, which the caller does before calling `passes_hard_filter`.
+Currency note: Only absolute thresholds (price band, dollar-volume) require USD
+conversion, which the caller does before calling `passes_hard_filter`.
 """
 from __future__ import annotations
 
@@ -37,37 +36,7 @@ def passes_hard_filter(
     return usd_dollar_volume >= min_dollar_volume
 
 
-def momentum_180d(closes: np.ndarray, dates: np.ndarray) -> float | None:
-    """Percent change between the close ~180 calendar days ago and the latest.
-
-    Returns a fraction (0.5 == +50%). None if there isn't ~180 days of history
-    or the baseline close is non-positive. Currency-independent (it's a ratio).
-    """
-    n = len(closes)
-    if n < 2 or len(dates) != n:
-        return None
-    ds = [_to_date(d) for d in dates]
-    target = ds[-1] - timedelta(days=180)
-    # First bar on or after the target date is our baseline.
-    idx = _first_on_or_after(ds, target)
-    if idx >= n - 1:
-        return None
-    # Require a real ~180d span: reject short series whose earliest bar is only
-    # days old (it'd be "since-inception" momentum, not 180-day).
-    if (ds[-1] - ds[idx]) < timedelta(days=150):
-        return None
-    base = float(closes[idx])
-    last = float(closes[-1])
-    if base <= 0:
-        return None
-    return last / base - 1.0
-
-
-def _first_on_or_after(ds: list[date], target: date) -> int:
-    for i, d in enumerate(ds):
-        if d >= target:
-            return i
-    return len(ds)
+# Momentum calculation removed - no longer used in screening strategy
 
 
 def quality_score(net_income: float | None, profit_margin: float | None) -> float:
@@ -114,15 +83,14 @@ def insider_score(transactions: list[dict]) -> float:
 
 
 def combined_score(
-    momentum_pct_rank: float,
     quality: float,
     insider: float,
     *,
-    w_m: float = 0.5,
-    w_q: float = 0.3,
-    w_i: float = 0.2,
+    w_q: float = 0.6,
+    w_i: float = 0.4,
 ) -> float:
-    """Weighted blend of three 0–100 components. `momentum_pct_rank` is the
-    symbol's percentile rank (0–100) within the filtered pool."""
-    total = w_m + w_q + w_i
-    return (w_m * momentum_pct_rank + w_q * quality + w_i * insider) / total
+    """Weighted blend of two 0–100 components: quality (60%) and insider activity (40%).
+
+    Momentum has been removed from the screening strategy."""
+    total = w_q + w_i
+    return (w_q * quality + w_i * insider) / total

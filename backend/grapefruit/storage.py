@@ -144,8 +144,9 @@ def init_db() -> None:
             """
         )
         # Look-ahead screener score columns (see migration 0003_lookahead.sql).
+        # Note: momentum_180d and momentum_score removed from screening strategy
         for col in (
-            "dollar_volume", "momentum_180d", "momentum_score", "quality_score",
+            "dollar_volume", "quality_score",
             "insider_score", "combined_score", "net_income", "profit_margin",
         ):
             cur.execute(f"ALTER TABLE watchlist ADD COLUMN IF NOT EXISTS {col} DOUBLE PRECISION")
@@ -282,36 +283,7 @@ def symbols_with_bars() -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
-def momentum_180d_all(min_bars: int = 60) -> dict[str, float]:
-    """{symbol: 180-day % change} computed in one query for every symbol with
-    enough history. Momentum is a price ratio, so it's currency-independent.
-
-    Baseline = the first close on or after (latest_ts - 180 days). Symbols with
-    fewer than `min_bars` total bars are excluded (illiquid / too-new)."""
-    with _cur() as cur:
-        cur.execute(
-            """
-            WITH bounds AS (
-                SELECT symbol, MAX(ts) AS last_ts, COUNT(*) AS n
-                FROM bars GROUP BY symbol HAVING COUNT(*) >= %s
-            ),
-            last_close AS (
-                SELECT b.symbol, b.close AS last_close
-                FROM bars b JOIN bounds bo ON bo.symbol = b.symbol AND bo.last_ts = b.ts
-            ),
-            base AS (
-                SELECT DISTINCT ON (b.symbol) b.symbol, b.close AS base_close
-                FROM bars b JOIN bounds bo ON bo.symbol = b.symbol
-                WHERE b.ts >= bo.last_ts - INTERVAL '180 days'
-                ORDER BY b.symbol, b.ts ASC
-            )
-            SELECT l.symbol, l.last_close / ba.base_close - 1.0 AS momentum
-            FROM last_close l JOIN base ba ON ba.symbol = l.symbol
-            WHERE ba.base_close > 0
-            """,
-            [min_bars],
-        )
-        return {r[0]: float(r[1]) for r in cur.fetchall()}
+# momentum_180d_all() removed - momentum no longer used in screening strategy
 
 
 def load_assets_map() -> dict[str, dict]:
@@ -780,7 +752,7 @@ def upsert_watchlist_rows(rows: list[dict]) -> int:
 
 _WATCHLIST_COLS = (
     "symbol", "last_close", "market_cap_usd", "sector", "industry", "why_listed",
-    "dollar_volume", "momentum_180d", "momentum_score", "quality_score",
+    "dollar_volume", "quality_score",
     "insider_score", "combined_score", "net_income", "profit_margin", "rank",
 )
 
