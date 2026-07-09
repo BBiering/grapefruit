@@ -129,7 +129,8 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 
   const companies: CompanyCard[] = [];
 
-  for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
+  try {
+    for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
     const metrics = metricsMap.get(row.symbol) || null;
 
     // Skip if no metrics (shouldn't happen since we filtered above)
@@ -175,7 +176,11 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       });
     }
 
-    companies.push(card);
+      companies.push(card);
+    }
+  } catch (error) {
+    console.error("[fetchUniverseCompanies] Error processing assets:", error);
+    throw error;
   }
 
   console.log(`[fetchUniverseCompanies] Returning ${companies.length} companies`);
