@@ -94,3 +94,16 @@ GRANT SELECT ON company_metrics TO anon, authenticated;
 GRANT SELECT ON step_change_history TO anon, authenticated;
 GRANT SELECT ON step_change_catalysts TO anon, authenticated;
 GRANT SELECT ON predicted_catalysts TO anon, authenticated;
+
+-- Row Level Security policies for anonymous read access
+CREATE POLICY anon_read ON company_metrics
+FOR SELECT TO anon
+USING (true);
+
+CREATE POLICY anon_read ON step_change_history
+FOR SELECT TO anon
+USING (true);
+
+CREATE POLICY anon_read ON step_change_catalysts
+FOR SELECT TO anon
+USING (true);
