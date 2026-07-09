@@ -23,7 +23,7 @@ interface RawWatchlist {
   combined_score: number | null;
   rank: number | null;
   strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
-  assets: { name: string | null; sector: string | null; industry: string | null }[] | null;
+  assets: { name: string | null; sector: string | null; industry: string | null }[];
 }
 
 interface RawWinner
@@ -38,14 +38,14 @@ interface RawWinner
     | "sector"
     | "industry"
   > {
-  assets: { name: string | null; sector: string | null; industry: string | null }[] | null;
+  assets: { name: string | null; sector: string | null; industry: string | null }[];
   winner_catalysts: {
     headline: string | null;
     summary: string | null;
     spike_explanation: string | null;
     was_foreseeable: boolean | null;
     foreseeable_evidence: string | null;
-  }[] | null;
+  }[];
 }
 
 interface RawEvent {
@@ -109,7 +109,7 @@ async function fetchWatchlist(): Promise<WatchlistRow[]> {
     const ev = earliestBySymbol.get(r.symbol);
     const catalyst = catalystBySymbol.get(r.symbol);
     const move = moveBySymbol.get(r.symbol);
-    const asset = r.assets?.[0] ?? null;
+    const asset = r.assets[0] ?? null;
     return {
       ...r,
       sector: asset?.sector ?? null,
@@ -144,8 +144,8 @@ async function fetchWinners(): Promise<Winner[]> {
   if (error) throw error;
 
   return ((data ?? []) as unknown as RawWinner[]).map((r) => {
-    const asset = r.assets?.[0] ?? null;
-    const catalyst = r.winner_catalysts?.[0] ?? null;
+    const asset = r.assets[0] ?? null;
+    const catalyst = r.winner_catalysts[0] ?? null;
     return {
       ...r,
       name: asset?.name ?? null,
