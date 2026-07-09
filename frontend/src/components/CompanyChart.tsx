@@ -27,6 +27,14 @@ interface CompanyChartProps {
     peak_price: number;
   };
   catalyst?: ForwardCatalyst;
+  // NEW: Support for step_change_history
+  recentStepChange?: {
+    start_ts: string;
+    end_ts: string;
+    trough_price: number;
+    peak_price: number;
+    tier?: string;
+  };
 }
 
 // Parse catalyst period from expected_window text
@@ -48,7 +56,7 @@ function parseCatalystPeriod(window: string | null | undefined): { startDate: st
   return { startDate: null, endDate: null };
 }
 
-export function CompanyChart({ bars, recentMove, winnerEvent, catalyst }: CompanyChartProps) {
+export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentStepChange }: CompanyChartProps) {
   const extendedData = useMemo(() => {
     if (!bars.length) return [];
 
@@ -140,23 +148,23 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst }: Compan
           />
 
           {/* Past step change overlay (yellow) */}
-          {(recentMove || winnerEvent) && (
+          {(recentMove || winnerEvent || recentStepChange) && (
             <>
               <ReferenceLine
-                x={recentMove?.start_ts || winnerEvent?.start_ts}
+                x={recentStepChange?.start_ts || recentMove?.start_ts || winnerEvent?.start_ts}
                 stroke="#6b6661"
                 strokeDasharray="3 3"
                 label={{ value: "Start", position: "top", fill: "#6b6661", fontSize: 11 }}
               />
               <ReferenceLine
-                x={recentMove?.end_ts || winnerEvent?.end_ts}
+                x={recentStepChange?.end_ts || recentMove?.end_ts || winnerEvent?.end_ts}
                 stroke="#f4bd4c"
                 strokeDasharray="3 3"
                 label={{ value: "Peak", position: "top", fill: "#f4bd4c", fontSize: 11 }}
               />
               <ReferenceArea
-                x1={recentMove?.start_ts || winnerEvent?.start_ts}
-                x2={recentMove?.end_ts || winnerEvent?.end_ts}
+                x1={recentStepChange?.start_ts || recentMove?.start_ts || winnerEvent?.start_ts}
+                x2={recentStepChange?.end_ts || recentMove?.end_ts || winnerEvent?.end_ts}
                 fill="#f4bd4c"
                 fillOpacity={0.15}
               />

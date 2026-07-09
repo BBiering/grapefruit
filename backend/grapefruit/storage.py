@@ -196,12 +196,77 @@ def init_db() -> None:
             )
             """
         )
+        # New universe-wide tables (migration 0007)
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS company_metrics (
+                symbol TEXT PRIMARY KEY REFERENCES assets(symbol) ON DELETE CASCADE,
+                quality_score DOUBLE PRECISION,
+                net_income DOUBLE PRECISION,
+                profit_margin DOUBLE PRECISION,
+                revenue_ttm DOUBLE PRECISION,
+                insider_score DOUBLE PRECISION,
+                insider_net_value DOUBLE PRECISION,
+                roe DOUBLE PRECISION,
+                debt_to_equity DOUBLE PRECISION,
+                current_ratio DOUBLE PRECISION,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                data_as_of DATE
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS step_change_history (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL REFERENCES assets(symbol) ON DELETE CASCADE,
+                start_ts DATE NOT NULL,
+                end_ts DATE NOT NULL,
+                days_to_peak INTEGER NOT NULL,
+                trough_price DOUBLE PRECISION NOT NULL,
+                peak_price DOUBLE PRECISION NOT NULL,
+                multiplier DOUBLE PRECISION NOT NULL,
+                post_peak_retention DOUBLE PRECISION,
+                breakout_ratio DOUBLE PRECISION,
+                market_cap_usd_at_peak DOUBLE PRECISION,
+                status TEXT CHECK (status IN ('held', 'faded')),
+                tier TEXT CHECK (tier IN ('major', 'moderate', 'minor')),
+                detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (symbol, end_ts)
+            )
+            """
+        )
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS step_change_catalysts (
+                step_change_id BIGINT PRIMARY KEY REFERENCES step_change_history(id) ON DELETE CASCADE,
+                headline TEXT,
+                summary TEXT,
+                spike_explanation TEXT,
+                was_foreseeable BOOLEAN,
+                foreseeable_evidence TEXT,
+                perplexity_citations JSONB,
+                model TEXT,
+                fetched_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+
         cur.execute("CREATE INDEX IF NOT EXISTS bars_symbol_idx ON bars(symbol)")
         cur.execute("CREATE INDEX IF NOT EXISTS winners_detected_idx ON winners(detected_at DESC)")
         cur.execute("CREATE INDEX IF NOT EXISTS winners_status_idx ON winners(status)")
         cur.execute("CREATE INDEX IF NOT EXISTS upcoming_events_symbol_idx ON upcoming_events(symbol)")
         cur.execute("CREATE INDEX IF NOT EXISTS upcoming_events_ts_idx ON upcoming_events(event_ts)")
         cur.execute("CREATE INDEX IF NOT EXISTS pipeline_runs_job_idx ON pipeline_runs(job_name, started_at DESC)")
+
+        # New table indexes
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_company_metrics_quality ON company_metrics(quality_score DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_company_metrics_insider ON company_metrics(insider_score DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_step_change_symbol ON step_change_history(symbol)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_step_change_end_ts ON step_change_history(end_ts DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_step_change_multiplier ON step_change_history(multiplier DESC)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_step_change_tier ON step_change_history(tier)")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_step_change_catalysts_foreseeable ON step_change_catalysts(was_foreseeable)")
 
         # FKs to assets(symbol) so PostgREST can embed `assets(name)` from the
         # winners / watchlist queries the frontend makes. See
@@ -1032,3 +1097,251 @@ def upsert_catalysts_with_tier(catalysts: list[dict]) -> int:
                 ],
             )
     return len(catalysts)
+
+
+# ---------------------------------------------------------------------------
+# company_metrics (NEW - universe-wide quality/financial metrics)
+# ---------------------------------------------------------------------------
+
+def upsert_company_metrics(rows: list[dict]) -> int:
+    """Insert or update quality/financial metrics for universe stocks.
+
+    Expected keys: symbol, quality_score, net_income, profit_margin, revenue_ttm,
+                   insider_score, insider_net_value, roe, debt_to_equity,
+                   current_ratio, data_as_of
+    """
+    if not rows:
+        return 0
+    with _cur() as cur:
+        cur.executemany(
+            """
+            INSERT INTO company_metrics (
+                symbol, quality_score, net_income, profit_margin, revenue_ttm,
+                insider_score, insider_net_value, roe, debt_to_equity, current_ratio,
+                fetched_at, data_as_of
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW(), %s)
+            ON CONFLICT (symbol) DO UPDATE SET
+                quality_score = EXCLUDED.quality_score,
+                net_income = EXCLUDED.net_income,
+                profit_margin = EXCLUDED.profit_margin,
+                revenue_ttm = EXCLUDED.revenue_ttm,
+                insider_score = EXCLUDED.insider_score,
+                insider_net_value = EXCLUDED.insider_net_value,
+                roe = EXCLUDED.roe,
+                debt_to_equity = EXCLUDED.debt_to_equity,
+                current_ratio = EXCLUDED.current_ratio,
+                fetched_at = EXCLUDED.fetched_at,
+                data_as_of = EXCLUDED.data_as_of
+            """,
+            [
+                (
+                    r["symbol"],
+                    r.get("quality_score"),
+                    r.get("net_income"),
+                    r.get("profit_margin"),
+                    r.get("revenue_ttm"),
+                    r.get("insider_score"),
+                    r.get("insider_net_value"),
+                    r.get("roe"),
+                    r.get("debt_to_equity"),
+                    r.get("current_ratio"),
+                    r.get("data_as_of"),
+                )
+                for r in rows
+            ],
+        )
+    return len(rows)
+
+
+def load_company_metrics() -> list[dict]:
+    """Load all company metrics."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT symbol, quality_score, net_income, profit_margin, revenue_ttm,
+                   insider_score, insider_net_value, roe, debt_to_equity, current_ratio,
+                   fetched_at, data_as_of
+            FROM company_metrics
+            ORDER BY quality_score DESC NULLS LAST
+            """
+        )
+        return cur.fetchall()
+
+
+# ---------------------------------------------------------------------------
+# step_change_history (NEW - all step changes, not just winners)
+# ---------------------------------------------------------------------------
+
+def upsert_step_change(row: dict) -> int:
+    """Insert or update a step change event. Returns the step_change_id.
+
+    Expected keys: symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price,
+                   multiplier, post_peak_retention, breakout_ratio, market_cap_usd_at_peak,
+                   status, tier
+    """
+    with _cur() as cur:
+        cur.execute(
+            """
+            INSERT INTO step_change_history (
+                symbol, start_ts, end_ts, days_to_peak,
+                trough_price, peak_price, multiplier,
+                post_peak_retention, breakout_ratio, market_cap_usd_at_peak,
+                status, tier, detected_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (symbol, end_ts) DO UPDATE SET
+                start_ts = EXCLUDED.start_ts,
+                days_to_peak = EXCLUDED.days_to_peak,
+                trough_price = EXCLUDED.trough_price,
+                peak_price = EXCLUDED.peak_price,
+                multiplier = EXCLUDED.multiplier,
+                post_peak_retention = EXCLUDED.post_peak_retention,
+                breakout_ratio = EXCLUDED.breakout_ratio,
+                market_cap_usd_at_peak = EXCLUDED.market_cap_usd_at_peak,
+                status = EXCLUDED.status,
+                tier = EXCLUDED.tier,
+                detected_at = EXCLUDED.detected_at
+            RETURNING id
+            """,
+            [
+                row["symbol"],
+                row["start_ts"],
+                row["end_ts"],
+                row["days_to_peak"],
+                row["trough_price"],
+                row["peak_price"],
+                row["multiplier"],
+                row.get("post_peak_retention"),
+                row.get("breakout_ratio"),
+                row.get("market_cap_usd_at_peak"),
+                row["status"],
+                row["tier"],
+            ],
+        )
+        result = cur.fetchone()
+        return result[0] if result else -1
+
+
+def load_step_changes(tier: str | None = None, min_multiplier: float | None = None) -> list[dict]:
+    """Load step change events with optional filtering."""
+    query = """
+        SELECT id, symbol, start_ts, end_ts, days_to_peak,
+               trough_price, peak_price, multiplier,
+               post_peak_retention, breakout_ratio, market_cap_usd_at_peak,
+               status, tier, detected_at
+        FROM step_change_history
+        WHERE 1=1
+    """
+    params = []
+    if tier:
+        query += " AND tier = %s"
+        params.append(tier)
+    if min_multiplier:
+        query += " AND multiplier >= %s"
+        params.append(min_multiplier)
+    query += " ORDER BY multiplier DESC"
+
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(query, params)
+        return cur.fetchall()
+
+
+def load_step_changes_for_symbol(symbol: str) -> list[dict]:
+    """Load all step changes for a specific symbol."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT id, symbol, start_ts, end_ts, days_to_peak,
+                   trough_price, peak_price, multiplier,
+                   post_peak_retention, breakout_ratio, market_cap_usd_at_peak,
+                   status, tier, detected_at
+            FROM step_change_history
+            WHERE symbol = %s
+            ORDER BY end_ts DESC
+            """,
+            [symbol],
+        )
+        return cur.fetchall()
+
+
+# ---------------------------------------------------------------------------
+# step_change_catalysts (NEW - explanations for step changes)
+# ---------------------------------------------------------------------------
+
+def upsert_step_change_catalyst(row: dict) -> None:
+    """Insert or update catalyst explanation for a step change event.
+
+    Expected keys: step_change_id, headline, summary, spike_explanation,
+                   was_foreseeable, foreseeable_evidence, perplexity_citations, model
+    """
+    with _cur() as cur:
+        cur.execute(
+            """
+            INSERT INTO step_change_catalysts (
+                step_change_id, headline, summary, spike_explanation,
+                was_foreseeable, foreseeable_evidence, perplexity_citations, model, fetched_at
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (step_change_id) DO UPDATE SET
+                headline = EXCLUDED.headline,
+                summary = EXCLUDED.summary,
+                spike_explanation = EXCLUDED.spike_explanation,
+                was_foreseeable = EXCLUDED.was_foreseeable,
+                foreseeable_evidence = EXCLUDED.foreseeable_evidence,
+                perplexity_citations = EXCLUDED.perplexity_citations,
+                model = EXCLUDED.model,
+                fetched_at = EXCLUDED.fetched_at
+            """,
+            [
+                row["step_change_id"],
+                row.get("headline"),
+                row.get("summary"),
+                row.get("spike_explanation"),
+                row.get("was_foreseeable"),
+                row.get("foreseeable_evidence"),
+                json.dumps(row.get("perplexity_citations")) if row.get("perplexity_citations") else None,
+                row.get("model", "sonar-pro"),
+            ],
+        )
+
+
+def load_step_change_catalysts() -> list[dict]:
+    """Load all step change catalysts."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT step_change_id, headline, summary, spike_explanation,
+                   was_foreseeable, foreseeable_evidence, perplexity_citations, model, fetched_at
+            FROM step_change_catalysts
+            ORDER BY fetched_at DESC
+            """
+        )
+        return cur.fetchall()
+
+
+def load_unexplained_step_changes(tier: str = "major", limit: int = 250) -> list[dict]:
+    """Load step changes that don't have catalyst explanations yet.
+
+    Prioritizes by tier (major first) → recency → never-explained.
+    """
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT h.id, h.symbol, h.start_ts, h.end_ts, h.multiplier, h.tier
+            FROM step_change_history h
+            LEFT JOIN step_change_catalysts c ON c.step_change_id = h.id
+            WHERE c.step_change_id IS NULL
+            ORDER BY
+                CASE h.tier
+                    WHEN 'major' THEN 1
+                    WHEN 'moderate' THEN 2
+                    WHEN 'minor' THEN 3
+                    ELSE 4
+                END,
+                h.end_ts DESC
+            LIMIT %s
+            """,
+            [limit],
+        )
+        return cur.fetchall()

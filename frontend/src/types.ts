@@ -29,7 +29,8 @@ export interface Bar {
   close: number;
 }
 
-export interface ForwardCatalyst {
+// Renamed from ForwardCatalyst
+export interface PredictedCatalyst {
   symbol: string;
   detected: boolean | null;
   event_name: string | null;
@@ -39,6 +40,56 @@ export interface ForwardCatalyst {
   source_url: string | null;
   model: string | null;
   scanned_at: string | null;
+}
+
+// Legacy alias for backwards compatibility
+export type ForwardCatalyst = PredictedCatalyst;
+
+// NEW: Company metrics (universe-wide quality data)
+export interface CompanyMetrics {
+  symbol: string;
+  quality_score: number | null;
+  net_income: number | null;
+  profit_margin: number | null;
+  revenue_ttm: number | null;
+  insider_score: number | null;
+  insider_net_value: number | null;
+  roe: number | null;
+  debt_to_equity: number | null;
+  current_ratio: number | null;
+  fetched_at: string;
+  data_as_of: string | null;
+}
+
+// NEW: Step change history (replaces winners + watchlist_moves)
+export interface StepChange {
+  id: number;
+  symbol: string;
+  start_ts: string;
+  end_ts: string;
+  days_to_peak: number;
+  trough_price: number;
+  peak_price: number;
+  multiplier: number;
+  post_peak_retention: number | null;
+  breakout_ratio: number | null;
+  market_cap_usd_at_peak: number | null;
+  status: "held" | "faded";
+  tier: "major" | "moderate" | "minor";
+  detected_at: string;
+}
+
+// NEW: Step change catalyst (replaces winner_catalysts)
+export interface StepChangeCatalyst {
+  step_change_id: number;
+  headline: string | null;
+  summary: string | null;
+  spike_explanation: string | null;
+  was_foreseeable: boolean | null;
+  foreseeable_evidence: string | null;
+  perplexity_citations: any | null;
+  model: string | null;
+  fetched_at: string;
 }
 
 export interface WatchlistMove {
@@ -111,9 +162,11 @@ export interface CompanyCard {
   was_foreseeable?: boolean;
 
   // Catalyst data
-  forward_catalyst?: ForwardCatalyst;
-  recent_move?: WatchlistMove;
-  winner_event?: {
+  forward_catalyst?: ForwardCatalyst;  // Keep for backwards compatibility
+  predicted_catalyst?: PredictedCatalyst;  // NEW: Use this going forward
+  recent_step_change?: StepChange;  // NEW: Replaces recent_move and winner_event
+  recent_move?: WatchlistMove;  // LEGACY: Keep for backwards compatibility
+  winner_event?: {  // LEGACY: Keep for backwards compatibility
     start_ts: string;
     end_ts: string;
     trough_price: number;

@@ -5,6 +5,10 @@ import type {
   WatchlistRow,
   Winner,
   ForwardCatalyst,
+  PredictedCatalyst,
+  CompanyMetrics,
+  StepChange,
+  StepChangeCatalyst,
   WatchlistMove,
   UpcomingEvent,
 } from "../types";
@@ -57,7 +61,105 @@ interface RawEvent {
   title: string | null;
 }
 
-// Fetch watchlist data (future companies)
+// NEW: Fetch from assets + company_metrics (universe-wide data)
+interface RawAssetWithMetrics {
+  symbol: string;
+  name: string | null;
+  exchange: string | null;
+  sector: string | null;
+  industry: string | null;
+  market_cap_usd: number | null;
+  company_metrics: CompanyMetrics[];
+  predicted_catalysts: PredictedCatalyst[];
+  step_change_history: StepChange[];
+}
+
+async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
+  // Get latest prices from watchlist (has last_close for top 40 stocks)
+  const { data: pricesData } = await supabase
+    .from("watchlist")
+    .select("symbol, last_close");
+
+  const latestPrices = new Map<string, number>();
+  if (pricesData) {
+    for (const row of pricesData) {
+      latestPrices.set(row.symbol, row.last_close || 0);
+    }
+  }
+
+  // Query assets with all related data
+  // NOTE: We select ALL assets, not filtering by company_metrics since all have been populated
+  const { data, error } = await supabase
+    .from("assets")
+    .select(`
+      symbol, name, exchange, sector, industry, market_cap_usd,
+      company_metrics!inner ( symbol, quality_score, insider_score, net_income, profit_margin ),
+      predicted_catalysts ( symbol, detected, event_name, impact_type, expected_window, strategic_summary ),
+      step_change_history ( id, symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status )
+    `)
+    .order('market_cap_usd', { ascending: false, nullsLast: true })
+    .limit(500);
+
+  if (error) {
+    console.error("Supabase query error:", error);
+    throw error;
+  }
+
+  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} assets from Supabase`);
+
+  const companies: CompanyCard[] = [];
+
+  for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
+    const metrics = row.company_metrics[0] || null;
+
+    // Skip if no metrics yet
+    if (!metrics) continue;
+
+    const catalyst = row.predicted_catalysts.find(c => c.detected) || null;
+
+    // Get the most recent step change (by end_ts)
+    const recentStepChange = row.step_change_history.length > 0
+      ? [...row.step_change_history].sort((a, b) =>
+          new Date(b.end_ts).getTime() - new Date(a.end_ts).getTime()
+        )[0]
+      : null;
+
+    const lastClose = latestPrices.get(row.symbol) || 0;
+
+    const card: CompanyCard = {
+      symbol: row.symbol,
+      name: row.name || row.symbol,
+      sector: row.sector || "Unknown",
+      industry: row.industry || "Unknown",
+      type: "future",
+      last_close: lastClose,
+      market_cap_usd: row.market_cap_usd ?? undefined,
+      quality_score: metrics?.quality_score ?? 50,
+      predicted_catalyst: catalyst ?? undefined,
+      forward_catalyst: catalyst ?? undefined,  // Backwards compatibility
+      recent_step_change: recentStepChange ?? undefined,
+      upcoming_events: [],
+    };
+
+    // Debug log for DAR.US
+    if (row.symbol === "DAR.US") {
+      console.log("[fetchUniverseCompanies] DAR.US data:", {
+        name: row.name,
+        sector: row.sector,
+        industry: row.industry,
+        catalyst: catalyst,
+        metrics: metrics,
+      });
+    }
+
+    companies.push(card);
+  }
+
+  console.log(`[fetchUniverseCompanies] Returning ${companies.length} companies`);
+  return companies;
+}
+
+// LEGACY: Fetch watchlist data (future companies)
 async function fetchWatchlist(): Promise<WatchlistRow[]> {
   const today = new Date().toISOString().slice(0, 10);
 
@@ -220,11 +322,37 @@ function transformWinnerToCard(winner: Winner): CompanyCard {
   };
 }
 
+// Feature flag: use new universe-wide schema
+const USE_NEW_SCHEMA = true;  // ✅ Enabled: company_metrics populated with 2,693 stocks
+
 // Main hook: fetches and transforms companies based on filter
 export function useCompanies(filter: "all" | "future" | "past" = "all") {
+  console.log(`[useCompanies] Called with filter="${filter}", USE_NEW_SCHEMA=${USE_NEW_SCHEMA}`);
+
   return useQuery({
-    queryKey: ["companies", filter],
+    queryKey: ["companies", filter, USE_NEW_SCHEMA],
     queryFn: async (): Promise<CompanyCard[]> => {
+      console.log(`[useCompanies] Query function executing: filter="${filter}", USE_NEW_SCHEMA=${USE_NEW_SCHEMA}`);
+
+      if (USE_NEW_SCHEMA && filter !== "past") {
+        console.log("[useCompanies] Using NEW schema path - calling fetchUniverseCompanies()");
+
+        // NEW: Universe-wide data from assets + company_metrics
+        const universeCompanies = await fetchUniverseCompanies();
+
+        if (filter === "future") {
+          return universeCompanies;
+        }
+
+        // For "all", also fetch past winners
+        const winners = await fetchWinners();
+        const pastCards = winners.map(transformWinnerToCard);
+
+        return [...universeCompanies, ...pastCards];
+      }
+
+      // LEGACY: Watchlist-based data
+      console.log("[useCompanies] Using LEGACY schema path - calling fetchWatchlist()");
       const results = await Promise.all([
         filter !== "past" ? fetchWatchlist() : Promise.resolve([]),
         filter !== "future" ? fetchWinners() : Promise.resolve([]),

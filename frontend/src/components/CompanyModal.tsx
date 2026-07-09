@@ -68,6 +68,7 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
           recentMove={company.recent_move}
           winnerEvent={company.winner_event}
           catalyst={company.forward_catalyst}
+          recentStepChange={company.recent_step_change}
         />
 
         {/* Stats Grid */}
