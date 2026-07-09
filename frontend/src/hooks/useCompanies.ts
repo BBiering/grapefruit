@@ -139,11 +139,14 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       continue;
     }
 
-    const catalyst = row.predicted_catalysts.find(c => c.detected) || null;
+    // Handle predicted_catalysts - Supabase returns array or empty array
+    const catalysts = Array.isArray(row.predicted_catalysts) ? row.predicted_catalysts : [];
+    const catalyst = catalysts.find(c => c.detected) || null;
 
     // Get the most recent step change (by end_ts)
-    const recentStepChange = row.step_change_history.length > 0
-      ? [...row.step_change_history].sort((a, b) =>
+    const stepChanges = Array.isArray(row.step_change_history) ? row.step_change_history : [];
+    const recentStepChange = stepChanges.length > 0
+      ? [...stepChanges].sort((a, b) =>
           new Date(b.end_ts).getTime() - new Date(a.end_ts).getTime()
         )[0]
       : null;
