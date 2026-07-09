@@ -44,8 +44,6 @@ interface RawWatchlist {
   why_listed: string;
   added_at: string;
   dollar_volume: number | null;
-  momentum_180d: number | null;
-  momentum_score: number | null;
   quality_score: number | null;
   combined_score: number | null;
   rank: number | null;
@@ -68,7 +66,7 @@ async function fetchFutureWinners(): Promise<WatchlistRow[]> {
       .from("watchlist")
       .select(`
         symbol, last_close, market_cap_usd, why_listed, added_at,
-        dollar_volume, momentum_180d, momentum_score, quality_score, combined_score, rank,
+        dollar_volume, quality_score, combined_score, rank,
         strategy_tag,
         assets ( name, sector, industry )
       `)
@@ -188,11 +186,6 @@ export default function FutureWinners() {
             </div>
 
             <div className="fc-strategies">
-              <Strategy
-                label="Momentum"
-                active={r.momentum_score != null && r.momentum_score >= 70}
-                value={formatScore(r.momentum_score)}
-              />
               <Strategy
                 label="Catalyst"
                 active={r.catalyst?.detected === true}
@@ -504,8 +497,6 @@ function DetailPane({ row }: { row: WatchlistRow }) {
       <div className="stats-grid">
         <Stat label="Price" value={row.last_close != null ? `$${row.last_close.toFixed(2)}` : "—"} />
         <Stat label="Market cap" value={formatMoney(row.market_cap_usd)} />
-        <Stat label="Momentum 180d" value={formatPct(row.momentum_180d)} />
-        <Stat label="Momentum score" value={formatScore(row.momentum_score)} />
         <Stat label="Quality score" value={formatScore(row.quality_score)} />
         <Stat label="Combined score" value={formatScore(row.combined_score)} accent />
       </div>
