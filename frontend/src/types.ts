@@ -59,10 +59,8 @@ export interface WatchlistRow {
   industry: string | null;
   why_listed: string;
   added_at: string;
-  // screener scores
+  // screener scores (momentum removed from strategy)
   dollar_volume: number | null;
-  momentum_180d: number | null;
-  momentum_score: number | null;
   quality_score: number | null;
   combined_score: number | null;
   rank: number | null;
@@ -75,6 +73,57 @@ export interface WatchlistRow {
   next_event_title: string | null;
   // joined from forward_catalysts
   catalyst: ForwardCatalyst | null;
-  // joined from watchlist_moves (recent move that drove momentum)
+  // joined from watchlist_moves (recent step-change event)
   move: WatchlistMove | null;
+}
+
+export interface UpcomingEvent {
+  symbol: string;
+  event_ts: string;
+  event_type: "earnings" | "trial_phase3" | "other";
+  title: string | null;
+}
+
+// Unified company card interface for both future and past companies
+export interface CompanyCard {
+  symbol: string;
+  name: string;
+  sector: string;
+  industry: string;
+  type: "future" | "past";
+
+  // Price data (always present)
+  last_close: number;
+  market_cap_usd?: number;
+
+  // Quality (always present)
+  quality_score: number;
+
+  // Strategy (future only)
+  strategy_tag?: "Buy Manually" | "Watchlist" | "Pass";
+  combined_score?: number;
+
+  // Past winner metadata
+  multiplier?: number;
+  days_to_peak?: number;
+  trough_price?: number;
+  peak_price?: number;
+  was_foreseeable?: boolean;
+
+  // Catalyst data
+  forward_catalyst?: ForwardCatalyst;
+  recent_move?: WatchlistMove;
+  winner_event?: {
+    start_ts: string;
+    end_ts: string;
+    trough_price: number;
+    peak_price: number;
+  };
+  upcoming_events?: UpcomingEvent[];
+
+  // Past winner explanations
+  headline?: string;
+  summary?: string;
+  spike_explanation?: string;
+  foreseeable_evidence?: string;
 }
