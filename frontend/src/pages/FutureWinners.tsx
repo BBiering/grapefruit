@@ -13,6 +13,7 @@ import {
 } from "recharts";
 import { supabase } from "../supabase";
 import type { ForwardCatalyst, WatchlistRow, WatchlistMove, Bar } from "../types";
+// Legacy component - replaced by Dashboard in App.tsx
 
 function formatMoney(usd: number | null) {
   if (usd == null) return <span className="muted">—</span>;
