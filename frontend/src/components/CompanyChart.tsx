@@ -53,24 +53,36 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst }: Compan
     if (!bars.length) return [];
 
     const catalystPeriod = parseCatalystPeriod(catalyst?.expected_window);
-    const data = [...bars];
 
-    // Find the furthest date we need to show
-    const lastBarDate = new Date(bars[bars.length - 1].ts);
-    let maxDate = new Date(lastBarDate);
+    // Filter to last 2 years only
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    const filteredBars = bars.filter(bar => new Date(bar.ts) >= twoYearsAgo);
 
-    // Extend to catalyst end date if it's in the future
+    const data = [...filteredBars];
+
+    // Find the furthest date we need to show (max 6 months from now)
+    const lastBarDate = filteredBars.length > 0 ? new Date(filteredBars[filteredBars.length - 1].ts) : new Date();
+    const sixMonthsFromNow = new Date();
+    sixMonthsFromNow.setMonth(sixMonthsFromNow.getMonth() + 6);
+
+    let maxDate = sixMonthsFromNow;
+
+    // Extend to catalyst date if within 6 months
     if (catalystPeriod.endDate) {
       const catalystEnd = new Date(catalystPeriod.endDate);
-      if (catalystEnd > maxDate) maxDate = catalystEnd;
+      if (catalystEnd > lastBarDate && catalystEnd <= sixMonthsFromNow) {
+        maxDate = catalystEnd;
+      }
     } else if (catalystPeriod.startDate) {
       const catalystStart = new Date(catalystPeriod.startDate);
-      if (catalystStart > maxDate) maxDate = catalystStart;
+      if (catalystStart > lastBarDate && catalystStart <= sixMonthsFromNow) {
+        maxDate = catalystStart;
+      }
     }
 
-    // Add 30-day buffer beyond max date
+    // Extend to max date
     const bufferDate = new Date(maxDate);
-    bufferDate.setDate(bufferDate.getDate() + 30);
 
     // Fill weekly placeholders up to buffer date
     const currentDate = new Date(lastBarDate);

@@ -19,9 +19,12 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
       </div>
 
       {/* Metadata: Sector / Industry */}
-      <div className="card-meta">
-        {company.sector} / {company.industry}
-      </div>
+      {company.sector && company.sector !== "Unknown" && (
+        <div className="card-meta">
+          {company.sector}
+          {company.industry && company.industry !== "Unknown" && ` / ${company.industry}`}
+        </div>
+      )}
 
       {/* Price + Market Cap */}
       <div className="card-price">
@@ -45,11 +48,6 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
         winnerEvent={company.winner_event}
         catalyst={company.forward_catalyst}
       />
-
-      {/* Type Badge */}
-      <div className="card-type">
-        {company.type === "future" ? "🚀 Potential" : "🏆 Historical"}
-      </div>
     </div>
   );
 }

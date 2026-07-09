@@ -19,23 +19,35 @@ async function fetchBars(symbol: string): Promise<Bar[]> {
 interface CompanyModalProps {
   company: CompanyCard;
   onClose: () => void;
+  onNext: () => void;
+  onPrev: () => void;
 }
 
-export function CompanyModal({ company, onClose }: CompanyModalProps) {
+export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalProps) {
   const { data: bars = [] } = useQuery({
     queryKey: ["bars", company.symbol],
     queryFn: () => fetchBars(company.symbol),
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
 
-  // Close on Escape key
+  // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") onClose();
+    if (e.key === "ArrowLeft") onPrev();
+    if (e.key === "ArrowRight") onNext();
   };
 
   return (
     <div className="modal-overlay" onClick={onClose} onKeyDown={handleKeyDown} tabIndex={0}>
-      <div className="modal-content glass fullscreen" onClick={(e) => e.stopPropagation()}>
+      {/* Navigation arrows */}
+      <button className="modal-nav modal-nav-prev" onClick={(e) => { e.stopPropagation(); onPrev(); }} aria-label="Previous company">
+        ‹
+      </button>
+      <button className="modal-nav modal-nav-next" onClick={(e) => { e.stopPropagation(); onNext(); }} aria-label="Next company">
+        ›
+      </button>
+
+      <div className="modal-content fullscreen" onClick={(e) => e.stopPropagation()}>
         <button className="modal-close" onClick={onClose} aria-label="Close modal">
           ×
         </button>

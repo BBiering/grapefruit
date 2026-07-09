@@ -738,11 +738,50 @@ code {
   overflow-y: auto;
   padding: 2rem;
   position: relative;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 20px 60px rgba(28, 26, 24, 0.3);
 }
 
 .modal-content.fullscreen {
   width: 95vw;
   height: 90vh;
+}
+
+.modal-nav {
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--text);
+  font-size: 2.5rem;
+  cursor: pointer;
+  z-index: 1001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(28, 26, 24, 0.2);
+  transition: all 0.2s;
+  line-height: 1;
+  padding-bottom: 4px;
+}
+
+.modal-nav:hover {
+  background: #fff;
+  transform: translateY(-50%) scale(1.1);
+  box-shadow: 0 6px 20px rgba(28, 26, 24, 0.3);
+}
+
+.modal-nav-prev {
+  left: 2rem;
+}
+
+.modal-nav-next {
+  right: 2rem;
 }
 
 .modal-close {
