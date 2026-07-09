@@ -97,7 +97,7 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       predicted_catalysts ( symbol, detected, event_name, impact_type, expected_window, strategic_summary ),
       step_change_history ( id, symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status )
     `)
-    .order('market_cap_usd', { ascending: false, nullsLast: true })
+    .order('market_cap_usd', { ascending: false, nullsFirst: false })
     .limit(500);
 
   if (error) {
