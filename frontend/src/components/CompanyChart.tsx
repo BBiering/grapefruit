@@ -53,6 +53,7 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst }: Compan
     if (!bars.length) return [];
 
     const catalystPeriod = parseCatalystPeriod(catalyst?.expected_window);
+    console.log("Catalyst period parsed:", catalystPeriod, "from:", catalyst?.expected_window);
 
     // Filter to last 2 years only
     const twoYearsAgo = new Date();

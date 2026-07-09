@@ -16,6 +16,8 @@ interface RawWatchlist {
   symbol: string;
   last_close: number | null;
   market_cap_usd: number | null;
+  sector: string | null;
+  industry: string | null;
   why_listed: string;
   added_at: string;
   dollar_volume: number | null;
@@ -23,7 +25,7 @@ interface RawWatchlist {
   combined_score: number | null;
   rank: number | null;
   strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
-  assets: { name: string | null; sector: string | null; industry: string | null }[];
+  assets: { name: string | null }[];
 }
 
 interface RawWinner
@@ -64,10 +66,10 @@ async function fetchWatchlist(): Promise<WatchlistRow[]> {
       .from("watchlist")
       .select(
         `
-        symbol, last_close, market_cap_usd, why_listed, added_at,
+        symbol, last_close, market_cap_usd, sector, industry, why_listed, added_at,
         dollar_volume, quality_score, combined_score, rank,
         strategy_tag,
-        assets ( name, sector, industry )
+        assets ( name )
       `
       )
       .order("combined_score", { ascending: false, nullsFirst: false })
@@ -112,8 +114,8 @@ async function fetchWatchlist(): Promise<WatchlistRow[]> {
     const asset = r.assets[0] ?? null;
     return {
       ...r,
-      sector: asset?.sector ?? null,
-      industry: asset?.industry ?? null,
+      sector: r.sector ?? null,
+      industry: r.industry ?? null,
       name: asset?.name ?? null,
       next_event_ts: ev?.event_ts ?? null,
       next_event_type: (ev?.event_type as "earnings" | "trial_phase3" | "other") ?? null,
