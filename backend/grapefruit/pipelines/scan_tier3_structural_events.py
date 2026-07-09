@@ -72,10 +72,11 @@ def run() -> int:
             continue
 
         # Construct ratio from old_shares/new_shares if ratio not provided
-        if not ratio and old_shares and new_shares:
-            # Skip invalid data where new_shares is 0 (delisting, not a split)
-            if new_shares <= 0:
-                log.warning("incomplete split data (invalid new_shares): %s", split)
+        if not ratio and old_shares is not None and new_shares is not None:
+            # Skip invalid data where new_shares is 0 or negative (delisting, not a split)
+            if new_shares <= 0 or old_shares <= 0:
+                log.warning("incomplete split data (invalid share counts new=%s, old=%s): %s",
+                           new_shares, old_shares, split)
                 continue
             ratio = f"{new_shares}:{old_shares}"
 
