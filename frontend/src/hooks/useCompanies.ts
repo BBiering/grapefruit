@@ -75,7 +75,26 @@ interface RawAssetWithMetrics {
 }
 
 async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
-  // Get latest prices from watchlist (has last_close for top 40 stocks)
+  // WORKAROUND: Query company_metrics first, then assets
+  // PostgREST embedding might not work correctly for our schema
+
+  // Get all company metrics
+  const { data: metricsData } = await supabase
+    .from("company_metrics")
+    .select("symbol, quality_score, insider_score, net_income, profit_margin")
+    .limit(1000);
+
+  console.log(`[fetchUniverseCompanies] Fetched ${metricsData?.length || 0} company_metrics`);
+
+  if (!metricsData || metricsData.length === 0) {
+    console.warn("[fetchUniverseCompanies] No company_metrics found!");
+    return [];
+  }
+
+  // Get symbols that have metrics
+  const symbolsWithMetrics = metricsData.map(m => m.symbol);
+
+  // Get latest prices from watchlist
   const { data: pricesData } = await supabase
     .from("watchlist")
     .select("symbol, last_close");
@@ -87,35 +106,35 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     }
   }
 
-  // Query assets with all related data
-  // NOTE: Using left joins and filtering in code since !inner might not work
+  // Query assets for those symbols
   const { data, error } = await supabase
     .from("assets")
     .select(`
       symbol, name, exchange, sector, industry, market_cap_usd,
-      company_metrics ( symbol, quality_score, insider_score, net_income, profit_margin ),
       predicted_catalysts ( symbol, detected, event_name, impact_type, expected_window, strategic_summary ),
       step_change_history ( id, symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status )
     `)
-    .order('market_cap_usd', { ascending: false, nullsFirst: false })
-    .limit(500);
+    .in('symbol', symbolsWithMetrics.slice(0, 500))  // Limit to first 500 symbols with metrics
+    .order('market_cap_usd', { ascending: false, nullsFirst: false });
 
   if (error) {
     console.error("Supabase query error:", error);
     throw error;
   }
 
-  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} assets from Supabase`);
-  console.log(`[fetchUniverseCompanies] Sample data:`, data?.[0]);
+  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} assets`);
+
+  // Create metrics lookup
+  const metricsMap = new Map(metricsData.map(m => [m.symbol, m]));
 
   const companies: CompanyCard[] = [];
 
   for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
-    const metrics = row.company_metrics?.[0] || null;
+    const metrics = metricsMap.get(row.symbol) || null;
 
-    // Skip if no metrics (filter in code instead of query)
+    // Skip if no metrics (shouldn't happen since we filtered above)
     if (!metrics) {
-      console.log(`[fetchUniverseCompanies] Skipping ${row.symbol} - no metrics`);
+      console.warn(`[fetchUniverseCompanies] ${row.symbol} missing metrics despite filter`);
       continue;
     }
 
