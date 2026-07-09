@@ -103,7 +103,7 @@ async function fetchWatchlist(): Promise<WatchlistRow[]> {
     moveBySymbol.set(mv.symbol, mv);
   }
 
-  return ((w.data ?? []) as RawWatchlist[]).map((r) => {
+  return ((w.data ?? []) as unknown as RawWatchlist[]).map((r) => {
     const ev = earliestBySymbol.get(r.symbol);
     const catalyst = catalystBySymbol.get(r.symbol);
     const move = moveBySymbol.get(r.symbol);
@@ -175,14 +175,14 @@ function transformWatchlistToCard(row: WatchlistRow): CompanyCard {
     recent_move: row.move ?? undefined,
     upcoming_events:
       row.next_event_ts && row.next_event_type
-        ? [
+        ? ([
             {
               symbol: row.symbol,
               event_ts: row.next_event_ts,
-              event_type: row.next_event_type,
+              event_type: row.next_event_type as "earnings" | "trial_phase3" | "other",
               title: row.next_event_title ?? null,
             },
-          ]
+          ] as UpcomingEvent[])
         : [],
   };
 }
