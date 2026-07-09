@@ -9,6 +9,8 @@ import type {
   UpcomingEvent,
 } from "../types";
 
+// Unified data fetching hook for company cards
+
 // Raw types from Supabase queries
 interface RawWatchlist {
   symbol: string;
