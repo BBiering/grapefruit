@@ -21,7 +21,7 @@ interface RawWatchlist {
   combined_score: number | null;
   rank: number | null;
   strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
-  assets: { name: string | null; sector: string | null; industry: string | null } | null;
+  assets: { name: string | null; sector: string | null; industry: string | null }[] | null;
 }
 
 interface RawWinner
@@ -36,14 +36,14 @@ interface RawWinner
     | "sector"
     | "industry"
   > {
-  assets: { name: string | null; sector: string | null; industry: string | null } | null;
+  assets: { name: string | null; sector: string | null; industry: string | null }[] | null;
   winner_catalysts: {
     headline: string | null;
     summary: string | null;
     spike_explanation: string | null;
     was_foreseeable: boolean | null;
     foreseeable_evidence: string | null;
-  } | null;
+  }[] | null;
 }
 
 interface RawEvent {
@@ -107,11 +107,12 @@ async function fetchWatchlist(): Promise<WatchlistRow[]> {
     const ev = earliestBySymbol.get(r.symbol);
     const catalyst = catalystBySymbol.get(r.symbol);
     const move = moveBySymbol.get(r.symbol);
+    const asset = r.assets?.[0] ?? null;
     return {
       ...r,
-      sector: r.assets?.sector ?? null,
-      industry: r.assets?.industry ?? null,
-      name: r.assets?.name ?? null,
+      sector: asset?.sector ?? null,
+      industry: asset?.industry ?? null,
+      name: asset?.name ?? null,
       next_event_ts: ev?.event_ts ?? null,
       next_event_type: (ev?.event_type as "earnings" | "trial_phase3" | "other") ?? null,
       next_event_title: ev?.title ?? null,
@@ -140,17 +141,21 @@ async function fetchWinners(): Promise<Winner[]> {
 
   if (error) throw error;
 
-  return ((data ?? []) as unknown as RawWinner[]).map((r) => ({
-    ...r,
-    name: r.assets?.name ?? null,
-    sector: r.assets?.sector ?? null,
-    industry: r.assets?.industry ?? null,
-    headline: r.winner_catalysts?.headline ?? null,
-    summary: r.winner_catalysts?.summary ?? null,
-    spike_explanation: r.winner_catalysts?.spike_explanation ?? null,
-    was_foreseeable: r.winner_catalysts?.was_foreseeable ?? null,
-    foreseeable_evidence: r.winner_catalysts?.foreseeable_evidence ?? null,
-  }));
+  return ((data ?? []) as unknown as RawWinner[]).map((r) => {
+    const asset = r.assets?.[0] ?? null;
+    const catalyst = r.winner_catalysts?.[0] ?? null;
+    return {
+      ...r,
+      name: asset?.name ?? null,
+      sector: asset?.sector ?? null,
+      industry: asset?.industry ?? null,
+      headline: catalyst?.headline ?? null,
+      summary: catalyst?.summary ?? null,
+      spike_explanation: catalyst?.spike_explanation ?? null,
+      was_foreseeable: catalyst?.was_foreseeable ?? null,
+      foreseeable_evidence: catalyst?.foreseeable_evidence ?? null,
+    };
+  });
 }
 
 // Transform WatchlistRow to CompanyCard (future companies)
@@ -168,16 +173,17 @@ function transformWatchlistToCard(row: WatchlistRow): CompanyCard {
     combined_score: row.combined_score ?? undefined,
     forward_catalyst: row.catalyst ?? undefined,
     recent_move: row.move ?? undefined,
-    upcoming_events: row.next_event_ts
-      ? [
-          {
-            symbol: row.symbol,
-            event_ts: row.next_event_ts,
-            event_type: row.next_event_type ?? "other",
-            title: row.next_event_title ?? null,
-          },
-        ]
-      : [],
+    upcoming_events:
+      row.next_event_ts && row.next_event_type
+        ? [
+            {
+              symbol: row.symbol,
+              event_ts: row.next_event_ts,
+              event_type: row.next_event_type,
+              title: row.next_event_title ?? null,
+            },
+          ]
+        : [],
   };
 }
 
