@@ -88,12 +88,12 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   }
 
   // Query assets with all related data
-  // NOTE: We select ALL assets, not filtering by company_metrics since all have been populated
+  // NOTE: Using left joins and filtering in code since !inner might not work
   const { data, error } = await supabase
     .from("assets")
     .select(`
       symbol, name, exchange, sector, industry, market_cap_usd,
-      company_metrics!inner ( symbol, quality_score, insider_score, net_income, profit_margin ),
+      company_metrics ( symbol, quality_score, insider_score, net_income, profit_margin ),
       predicted_catalysts ( symbol, detected, event_name, impact_type, expected_window, strategic_summary ),
       step_change_history ( id, symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status )
     `)
@@ -106,14 +106,18 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   }
 
   console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} assets from Supabase`);
+  console.log(`[fetchUniverseCompanies] Sample data:`, data?.[0]);
 
   const companies: CompanyCard[] = [];
 
   for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
-    const metrics = row.company_metrics[0] || null;
+    const metrics = row.company_metrics?.[0] || null;
 
-    // Skip if no metrics yet
-    if (!metrics) continue;
+    // Skip if no metrics (filter in code instead of query)
+    if (!metrics) {
+      console.log(`[fetchUniverseCompanies] Skipping ${row.symbol} - no metrics`);
+      continue;
+    }
 
     const catalyst = row.predicted_catalysts.find(c => c.detected) || null;
 
