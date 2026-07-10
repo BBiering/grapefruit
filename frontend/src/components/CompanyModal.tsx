@@ -30,6 +30,12 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
     staleTime: 10 * 60 * 1000, // 10 minutes
   });
 
+  // Debug: Log catalyst data
+  console.log(`[CompanyModal] ${company.symbol} catalyst data:`, {
+    predicted_catalyst: company.predicted_catalyst,
+    forward_catalyst: company.forward_catalyst,
+  });
+
   // Handle keyboard navigation
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Escape") onClose();
@@ -67,7 +73,7 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
           bars={bars}
           recentMove={company.recent_move}
           winnerEvent={company.winner_event}
-          catalyst={company.forward_catalyst}
+          catalyst={company.predicted_catalyst || company.forward_catalyst}
           recentStepChange={company.recent_step_change}
         />
 
@@ -79,7 +85,9 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
           {company.type === "future" ? (
             <>
               {/* Forward Catalyst Card */}
-              {company.forward_catalyst?.detected && <CatalystCard catalyst={company.forward_catalyst} />}
+              {(company.predicted_catalyst?.detected || company.forward_catalyst?.detected) && (
+                <CatalystCard catalyst={company.predicted_catalyst || company.forward_catalyst!} />
+              )}
 
               {/* Upcoming Events Card */}
               {company.upcoming_events && company.upcoming_events.length > 0 && (
