@@ -39,9 +39,13 @@ def is_reverse_split(ratio: str) -> bool:
 
 
 def is_rebalancing_season() -> bool:
-    """Check if we're in Russell/S&P rebalancing season (May-June, Nov-Dec)."""
+    """Check if we're in EU index rebalancing season.
+
+    EU indices (STOXX 600, DAX, CAC 40, FTSE) have quarterly reviews
+    in March, June, September, and December.
+    """
     month = datetime.now(timezone.utc).month
-    return month in (5, 6, 11, 12)
+    return month in (3, 6, 9, 12)
 
 
 def run() -> int:
@@ -84,8 +88,8 @@ def run() -> int:
             log.warning("incomplete split data (no ratio): %s", split)
             continue
 
-        # Extract exchange from code (e.g., "002630.KQ" -> "KQ")
-        symbol = code if "." in code else f"{code}.US"
+        # Symbols from EODHD splits calendar should already be fully qualified (e.g., "AIR.PA")
+        symbol = code
 
         try:
             if is_reverse_split(ratio):
@@ -119,14 +123,14 @@ def run() -> int:
             stored = storage.upsert_risk_flags(filtered_splits)
             log.info("stored %d reverse split risk flags", stored)
 
-    # 4. Seasonal index inclusion scan (June/December only)
-    # TODO: Implement Perplexity scan for Russell 2000 / S&P SmallCap 600 rebalancing
+    # 4. Seasonal index inclusion scan (quarterly for EU indices)
+    # TODO: Implement Perplexity scan for STOXX 600 / DAX / CAC 40 / FTSE rebalancing
     # This would use catalyst.py with a specialized prompt for index inclusion
     # For now, we skip this as it's seasonal and requires manual review
 
     if is_rebalancing_season():
-        log.info("in rebalancing season (month=%d) - index inclusion scan would run here",
+        log.info("in EU index rebalancing season (month=%d) - index inclusion scan would run here",
                  datetime.now(timezone.utc).month)
-        # Future: scan top 300 small-caps for index inclusion candidates
+        # Future: scan top 300 small-caps for EU index inclusion candidates
 
     return len(reverse_splits)

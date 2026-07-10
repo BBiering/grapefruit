@@ -160,12 +160,14 @@ def _forward_catalyst_chat_api(base: dict, label: str, price_str: str, symbol: s
     """Fallback to chat completion API (no finance_search tools)."""
     user_msg = (
         "You are an institutional research analyst hunting for forward-looking, "
-        "high-impact stock catalysts. Analyze the live web, SEC EDGAR filings "
-        "(especially recent 8-Ks), corporate calendars, and bio/tech registries "
+        "high-impact stock catalysts for European companies. Analyze the live web, "
+        "European regulatory filings (annual reports, half-year reports, ad-hoc "
+        "disclosures per MAR regulation), exchange announcements (RNS for LSE, DGAP "
+        "for XETRA, AMF for Euronext), corporate calendars, and bio/tech registries "
         f"for the ticker '{label}' (currently around {price_str}).\n\n"
         "Identify a SCHEDULED or highly anticipated FUTURE event in the next 1 to "
         "90 days that could cause a large structural re-pricing (e.g. Phase 2/3 "
-        "trial data readouts, FDA PDUFA decision dates, scheduled spin-offs, "
+        "trial data readouts, EMA CHMP opinion dates, scheduled demergers, "
         "earnings dates with expected guidance changes, pending regulatory "
         "approvals, or major contract decisions). Ignore old news unless it sets "
         "up an imminent future event.\n\n"
@@ -299,7 +301,7 @@ def explain_move(
                 "role": "system",
                 "content": (
                     "You are a financial research assistant. Identify real-world "
-                    "catalysts for sharp US-equity moves. Return only the JSON object "
+                    "catalysts for sharp European equity moves. Return only the JSON object "
                     "matching the user's schema; do not wrap it in prose or fences."
                 ),
             },
@@ -404,18 +406,18 @@ def tier1_biotech_catalyst(symbol: str, name: str | None = None, price: float | 
     price_str = f"${price:.2f}" if price else "unknown"
 
     user_msg = (
-        f"You are hunting for binary FDA and clinical trial catalysts for biotech ticker '{label}' (price ~{price_str}).\n\n"
+        f"You are hunting for binary EMA and clinical trial catalysts for European biotech/pharma ticker '{label}' (price ~{price_str}).\n\n"
         "TIER 1 CATALYSTS TO DETECT (highest priority):\n"
-        "1. FDA PDUFA target action dates - exact decision deadline\n"
-        "2. FDA AdCom meeting dates - advisory committee vote\n"
+        "1. EMA CHMP opinion dates - Committee for Medicinal Products for Human Use decision\n"
+        "2. EMA CHMP meeting agendas - advisory committee review dates\n"
         "3. Phase 2b or Phase 3 topline data readout dates - final trial results unlock\n"
-        "4. BLA/NDA submission acceptance with assigned PDUFA date\n\n"
+        "4. Marketing Authorization Application (MAA) submission with expected CHMP timeline\n\n"
         "Search:\n"
-        "- FDA PDUFA calendar trackers\n"
-        "- ClinicalTrials.gov for trial completion timelines\n"
+        "- EMA CHMP meeting calendars and opinion dates\n"
+        "- EU Clinical Trials Register (clinicaltrialsregister.eu) for trial completion timelines\n"
         "- Company IR pages for trial milestone guidance\n"
-        "- Biotech databases (e.g., BioPharmCatalyst)\n"
-        "- SEC 8-K filings announcing regulatory milestones\n\n"
+        "- European biotech databases and news\n"
+        "- Company RNS/DGAP/AMF announcements on regulatory milestones\n\n"
         "Return JSON:\n"
         "{\n"
         '  "tier1_catalyst_detected": true/false,\n'
@@ -487,10 +489,10 @@ def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | 
         "- Business unit carve-outs creating new publicly traded entities\n"
         "- Reverse Morris Trust transactions\n\n"
         "Search:\n"
-        "- SEC Form 10-12B/A registration statements\n"
-        "- SEC Form 8-K spin-off announcements\n"
+        "- Prospectus filings for the spun-off entity (e.g., BaFin, FCA, AMF)\n"
+        "- Company demerger announcements via exchange notices (RNS, DGAP, AMF)\n"
         "- Investor presentations mentioning strategic separation\n"
-        "- Proxy statements with spin-off shareholder votes\n\n"
+        "- Annual reports and shareholder meeting materials describing the spin-off\n\n"
         "Return JSON:\n"
         "{\n"
         '  "spinoff_detected": true/false,\n'
