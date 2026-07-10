@@ -51,6 +51,15 @@ export function Dashboard() {
         if (!company.industry || company.industry === "Unknown" || company.industry !== selectedIndustry) {
           return false;
         }
+
+        // Debug: Log companies that pass the Biotechnology filter
+        if (selectedIndustry === "Biotechnology" && ["ABTC.US", "RGC.US"].includes(company.symbol)) {
+          console.log(`[Filter Debug] ${company.symbol} passed Biotechnology filter:`, {
+            name: company.name,
+            sector: company.sector,
+            industry: company.industry,
+          });
+        }
       }
 
       // Catalyst tier filter (by tier_name)
