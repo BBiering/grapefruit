@@ -12,10 +12,60 @@ export function Dashboard() {
   const [selectedCompany, setSelectedCompany] = useState<CompanyCardType | null>(null);
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
+  // Filter states
+  const [selectedSector, setSelectedSector] = useState<string>("all");
+  const [selectedIndustry, setSelectedIndustry] = useState<string>("all");
+  const [selectedCatalystTier, setSelectedCatalystTier] = useState<string>("all");
+
   const { data: companies = [], isLoading } = useCompanies("all");
 
-  const sortedCompanies = useMemo(() => {
-    return [...companies].sort((a, b) => {
+  // Get unique sectors, industries for filter dropdowns
+  const { sectors, industries } = useMemo(() => {
+    const sectorSet = new Set<string>();
+    const industrySet = new Set<string>();
+
+    companies.forEach(c => {
+      if (c.sector && c.sector !== "Unknown") sectorSet.add(c.sector);
+      if (c.industry && c.industry !== "Unknown") industrySet.add(c.industry);
+    });
+
+    return {
+      sectors: Array.from(sectorSet).sort(),
+      industries: Array.from(industrySet).sort(),
+    };
+  }, [companies]);
+
+  // Filter and sort companies
+  const filteredAndSortedCompanies = useMemo(() => {
+    // Apply filters first
+    let filtered = companies.filter(company => {
+      // Sector filter
+      if (selectedSector !== "all" && company.sector !== selectedSector) {
+        return false;
+      }
+
+      // Industry filter
+      if (selectedIndustry !== "all" && company.industry !== selectedIndustry) {
+        return false;
+      }
+
+      // Catalyst tier filter
+      if (selectedCatalystTier !== "all") {
+        const hasCatalyst = company.predicted_catalyst?.detected || company.forward_catalyst?.detected;
+
+        if (selectedCatalystTier === "has_catalyst" && !hasCatalyst) {
+          return false;
+        }
+        if (selectedCatalystTier === "no_catalyst" && hasCatalyst) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+
+    // Then sort
+    return filtered.sort((a, b) => {
       switch (sortBy) {
         case "score":
           // Sort by: 1) Tier (lower = higher priority), 2) Event date (soonest), 3) Quality (highest)
@@ -42,7 +92,7 @@ export function Dashboard() {
           return 0;
       }
     });
-  }, [companies, sortBy]);
+  }, [companies, sortBy, selectedSector, selectedIndustry, selectedCatalystTier]);
 
   return (
     <div className="dashboard">
@@ -62,14 +112,68 @@ export function Dashboard() {
         </select>
       </header>
 
+      {/* Sidebar Filters */}
+      <aside className="sidebar glass">
+        <h3>Filters</h3>
+
+        <div className="filter-group">
+          <label>Sector</label>
+          <select value={selectedSector} onChange={(e) => setSelectedSector(e.target.value)}>
+            <option value="all">All Sectors ({companies.length})</option>
+            {sectors.map(sector => (
+              <option key={sector} value={sector}>
+                {sector} ({companies.filter(c => c.sector === sector).length})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-group">
+          <label>Industry</label>
+          <select value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)}>
+            <option value="all">All Industries ({companies.length})</option>
+            {industries.map(industry => (
+              <option key={industry} value={industry}>
+                {industry} ({companies.filter(c => c.industry === industry).length})
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="filter-group">
+          <label>Catalyst</label>
+          <select value={selectedCatalystTier} onChange={(e) => setSelectedCatalystTier(e.target.value)}>
+            <option value="all">All ({companies.length})</option>
+            <option value="has_catalyst">
+              With Catalyst ({companies.filter(c => c.predicted_catalyst?.detected || c.forward_catalyst?.detected).length})
+            </option>
+            <option value="no_catalyst">
+              No Catalyst ({companies.filter(c => !c.predicted_catalyst?.detected && !c.forward_catalyst?.detected).length})
+            </option>
+          </select>
+        </div>
+
+        <button
+          className="reset-filters"
+          onClick={() => {
+            setSelectedSector("all");
+            setSelectedIndustry("all");
+            setSelectedCatalystTier("all");
+          }}
+          disabled={selectedSector === "all" && selectedIndustry === "all" && selectedCatalystTier === "all"}
+        >
+          Reset Filters
+        </button>
+      </aside>
+
       {/* Card Grid */}
       <main className="card-grid">
         {isLoading ? (
           <div className="loading">Loading companies...</div>
-        ) : sortedCompanies.length === 0 ? (
-          <div className="loading">No companies found</div>
+        ) : filteredAndSortedCompanies.length === 0 ? (
+          <div className="loading">No companies match your filters</div>
         ) : (
-          sortedCompanies.map((company, index) => (
+          filteredAndSortedCompanies.map((company, index) => (
             <CompanyCard
               key={company.symbol}
               company={company}
@@ -88,13 +192,13 @@ export function Dashboard() {
           company={selectedCompany}
           onClose={() => setSelectedCompany(null)}
           onNext={() => {
-            const nextIndex = (selectedIndex + 1) % sortedCompanies.length;
-            setSelectedCompany(sortedCompanies[nextIndex]);
+            const nextIndex = (selectedIndex + 1) % filteredAndSortedCompanies.length;
+            setSelectedCompany(filteredAndSortedCompanies[nextIndex]);
             setSelectedIndex(nextIndex);
           }}
           onPrev={() => {
-            const prevIndex = (selectedIndex - 1 + sortedCompanies.length) % sortedCompanies.length;
-            setSelectedCompany(sortedCompanies[prevIndex]);
+            const prevIndex = (selectedIndex - 1 + filteredAndSortedCompanies.length) % filteredAndSortedCompanies.length;
+            setSelectedCompany(filteredAndSortedCompanies[prevIndex]);
             setSelectedIndex(prevIndex);
           }}
         />

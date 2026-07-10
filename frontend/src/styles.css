@@ -824,10 +824,15 @@ code {
 
 /* Dashboard Layout */
 .dashboard {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  grid-template-rows: auto 1fr;
   min-height: 100vh;
+  gap: 0;
 }
 
 .dashboard .topbar {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 2rem;
@@ -904,9 +909,106 @@ code {
   color: var(--muted);
 }
 
+/* Sidebar Filters */
+.sidebar {
+  grid-column: 1;
+  padding: 1.5rem;
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  height: fit-content;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+}
+
+.sidebar h3 {
+  margin: 0 0 1.5rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.filter-group {
+  margin-bottom: 1.5rem;
+}
+
+.filter-group label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+
+.filter-group select {
+  width: 100%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.filter-group select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  outline: none;
+}
+
+.reset-filters {
+  width: 100%;
+  padding: 0.6rem 1rem;
+  margin-top: 0.5rem;
+  background: rgba(232, 102, 79, 0.1);
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: none;
+}
+
+.reset-filters:hover:not(:disabled) {
+  background: var(--accent);
+  color: white;
+  transform: none;
+}
+
+.reset-filters:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: rgba(232, 102, 79, 0.05);
+  border-color: var(--border);
+}
+
+.card-grid {
+  grid-column: 2;
+  padding: 2rem;
+}
+
 /* Responsive */
 @media (max-width: 900px) {
+  .dashboard {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    grid-column: 1;
+    position: static;
+    max-height: none;
+    padding: 1rem;
+  }
+
   .card-grid {
+    grid-column: 1;
     grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
     gap: 1rem;
     padding: 1rem;
