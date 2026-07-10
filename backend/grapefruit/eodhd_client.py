@@ -26,10 +26,11 @@ _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 _TIMEOUT = 30.0
 
-# Exchanges that make up the universe. Focus is US small-caps; European
-# exchanges are excluded (user decision to concentrate on US retail-accessible
-# names). The symbol stored everywhere is the full EODHD ticker (e.g. "DRUG.US").
-EXCHANGES: list[str] = ["US"]
+# Exchanges that make up the universe. Focus is EU small-caps across 7 exchanges:
+# XETRA (Germany), LSE (UK), PA (France), HE (Finland), ST (Sweden), CO (Denmark), OL (Norway).
+# US exchanges excluded (user decision to pivot to European markets).
+# The symbol stored everywhere is the full EODHD ticker (e.g. "BMW.XETRA").
+EXCHANGES: list[str] = ["XETRA", "LSE", "PA", "HE", "ST", "CO", "OL"]
 
 # Reporting currency of each exchange's MarketCapitalization / prices. Used to
 # convert market cap to USD for the small-cap filter. LSE quotes in pence (GBX),
@@ -69,14 +70,8 @@ _NATIVE_CURRENCIES: dict[str, set[str]] = {
 }
 
 
-# Real venues we accept under the EODHD "US" umbrella. EODHD's US list lumps
-# ~12k OTC / pink-sheet names (Exchange in PINK, OTCQB, OTCGREY, OTCQX, OTCCE,
-# OTCMKTS, OTCBB, OTCPK) in with the real exchanges. OTC tickers are illiquid
-# and their stale/near-zero prints fabricate absurd multipliers (47000x), so we
-# keep only the proper venues. Non-US exchanges aren't subdivided this way.
-_US_REAL_EXCHANGES: set[str] = {
-    "NYSE", "NASDAQ", "AMEX", "BATS", "NYSE ARCA", "NYSE MKT", "US",
-}
+# Note: EU exchanges don't have OTC/pink-sheet subdivisions like US.
+# The EODHD exchange lists for XETRA, LSE, PA, etc. are cleaner and don't require venue filtering.
 
 
 def native_symbol_meta(exchange: str) -> dict[str, dict]:
@@ -85,7 +80,7 @@ def native_symbol_meta(exchange: str) -> dict[str, dict]:
 
     Reads the exchange-symbol-list endpoint, which — unlike the bulk feed —
     carries Currency, Isin, and the real venue (Exchange). Used by
-    refresh_universe to reject phantom cross-listings + OTC names and to dedup
+    refresh_universe to reject phantom cross-listings and to dedup
     the same company across exchanges by ISIN.
     """
     native = _NATIVE_CURRENCIES.get(exchange, {_EXCHANGE_CURRENCY.get(exchange, "USD")})
@@ -96,9 +91,7 @@ def native_symbol_meta(exchange: str) -> dict[str, dict]:
         code = r.get("Code")
         if not code or r.get("Currency") not in native:
             continue
-        # US: keep only real exchanges, drop OTC/pink-sheets.
-        if exchange == "US" and r.get("Exchange") not in _US_REAL_EXCHANGES:
-            continue
+        # EU exchanges don't have OTC/pink-sheet issues like US, so no venue filtering needed
         out[code] = {
             "name": r.get("Name"),
             "isin": r.get("Isin"),
@@ -274,16 +267,18 @@ def fetch_insider_transactions(symbol: str, limit: int = 100) -> list[dict]:
 
 
 def fetch_earnings_calendar(start: date, end: date, symbols: list[str] | None = None) -> list[dict]:
-    """Upcoming earnings dates in [start, end] for US tickers.
+    """Upcoming earnings dates in [start, end].
 
-    Optionally filter by `symbols`. Each item has at least:
-    `code` (symbol), `date`, `report_date`, `estimate`, `revenue_estimate`,
-    `actual`, `difference`, `percent`. EODHD's docs:
+    Optionally filter by `symbols` (must be fully qualified, e.g., "BMW.XETRA").
+    Each item has at least: `code` (symbol), `date`, `report_date`, `estimate`,
+    `revenue_estimate`, `actual`, `difference`, `percent`.
+
+    NOTE: EODHD's earnings calendar is US-centric and may not work well for EU exchanges.
     https://eodhd.com/financial-apis/calendar-upcoming-earnings-ipos-splits/
     """
     params = {"from": start.isoformat(), "to": end.isoformat()}
     if symbols:
-        params["symbols"] = ",".join(f"{s}.US" for s in symbols)
+        params["symbols"] = ",".join(symbols)  # Already fully qualified (e.g., "BMW.XETRA")
     data = _get("calendar/earnings", params)
     if isinstance(data, dict):
         return data.get("earnings", [])
@@ -291,10 +286,11 @@ def fetch_earnings_calendar(start: date, end: date, symbols: list[str] | None = 
 
 
 def fetch_splits_calendar(start: date, end: date, symbols: list[str] | None = None) -> list[dict]:
-    """Upcoming stock splits in [start, end] for US tickers.
+    """Upcoming stock splits in [start, end].
 
-    Optionally filter by `symbols`. Each item has at least:
-    `code` (symbol), `date`, `split` (ratio like "2:1" or "1:5"), `optionable`.
+    Optionally filter by `symbols` (must be fully qualified, e.g., "BMW.XETRA").
+    Each item has at least: `code` (symbol), `date`, `split` (ratio like "2:1" or "1:5"),
+    `optionable`.
 
     Ratio format: "new:old" (e.g., "1:5" = reverse split where 5 shares become 1,
     "2:1" = forward split where 1 share becomes 2).
@@ -303,7 +299,7 @@ def fetch_splits_calendar(start: date, end: date, symbols: list[str] | None = No
     """
     params = {"from": start.isoformat(), "to": end.isoformat(), "type": "splits"}
     if symbols:
-        params["symbols"] = ",".join(f"{s}.US" for s in symbols)
+        params["symbols"] = ",".join(symbols)  # Already fully qualified (e.g., "BMW.XETRA")
     data = _get("calendar/splits", params)
     if isinstance(data, dict):
         return data.get("splits", [])
