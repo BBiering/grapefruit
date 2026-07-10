@@ -132,13 +132,10 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 
   console.log(`[fetchUniverseCompanies] Fetching ${symbolsToFetch.length} assets (${catalystsMap.size} with catalysts)`);
 
-  // Query assets for those symbols
+  // Query assets WITHOUT step_change_history to avoid duplicates
   const { data, error } = await supabase
     .from("assets")
-    .select(`
-      symbol, name, exchange, sector, industry, market_cap_usd,
-      step_change_history ( id, symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status )
-    `)
+    .select(`symbol, name, exchange, sector, industry, market_cap_usd`)
     .in('symbol', symbolsToFetch);
 
   if (error) {
@@ -146,25 +143,34 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     throw error;
   }
 
-  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} rows from assets query`);
+  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} unique assets`);
+
+  // Query step changes separately to get most recent per symbol
+  const { data: stepChangesData } = await supabase
+    .from("step_change_history")
+    .select("symbol, id, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status")
+    .in('symbol', symbolsToFetch)
+    .order('end_ts', { ascending: false });
+
+  // Group step changes by symbol and keep most recent
+  const recentStepChanges = new Map();
+  if (stepChangesData) {
+    for (const sc of stepChangesData) {
+      if (!recentStepChanges.has(sc.symbol)) {
+        recentStepChanges.set(sc.symbol, sc);
+      }
+    }
+  }
+
+  console.log(`[fetchUniverseCompanies] Found ${recentStepChanges.size} companies with step changes`);
 
   // Create metrics lookup
   const metricsMap = new Map(metricsData.map(m => [m.symbol, m]));
 
-  // Group by symbol to handle duplicates from step_change_history join
-  const assetsBySymbol = new Map<string, RawAssetWithMetrics>();
-  for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
-    if (!assetsBySymbol.has(row.symbol)) {
-      assetsBySymbol.set(row.symbol, row);
-    }
-  }
-
-  console.log(`[fetchUniverseCompanies] Unique assets after deduplication: ${assetsBySymbol.size}`);
-
   const companies: CompanyCard[] = [];
 
   try {
-    for (const row of assetsBySymbol.values()) {
+    for (const row of (data ?? [])) {
     const metrics = metricsMap.get(row.symbol) || null;
 
     // Skip if no metrics (shouldn't happen since we filtered above)
@@ -176,13 +182,8 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     // Get catalyst from our pre-fetched map
     const catalyst = catalystsMap.get(row.symbol) || null;
 
-    // Get the most recent step change (by end_ts)
-    const stepChanges = Array.isArray(row.step_change_history) ? row.step_change_history : [];
-    const recentStepChange = stepChanges.length > 0
-      ? [...stepChanges].sort((a, b) =>
-          new Date(b.end_ts).getTime() - new Date(a.end_ts).getTime()
-        )[0]
-      : null;
+    // Get the most recent step change from separate query
+    const recentStepChange = recentStepChanges.get(row.symbol) || null;
 
     const lastClose = latestPrices.get(row.symbol) || 0;
 
@@ -201,14 +202,17 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       upcoming_events: [],
     };
 
-    // Debug log for specific symbols
-    if (["DAR.US", "ABTC.US", "RGC.US"].includes(row.symbol)) {
-      console.log(`[fetchUniverseCompanies] ${row.symbol} data:`, {
+    // Debug log for specific symbols with missing data
+    if (["DAR.US", "ABTC.US", "RGC.US", "RDN.US"].includes(row.symbol)) {
+      console.log(`[fetchUniverseCompanies] ${row.symbol} raw data from DB:`, {
         name: row.name,
         sector: row.sector,
         industry: row.industry,
+        name_is_null: row.name === null,
+        sector_is_null: row.sector === null,
+        industry_is_null: row.industry === null,
         catalyst: catalyst,
-        metrics: metrics,
+        recentStepChange: recentStepChange,
       });
     }
 
@@ -411,6 +415,13 @@ export function useCompanies(filter: "all" | "future" | "past" = "all") {
         // For "all", also fetch past winners
         const winners = await fetchWinners();
         const pastCards = winners.map(transformWinnerToCard);
+
+        // Check for duplicates between universeCompanies and pastCards
+        const universeSymbols = new Set(universeCompanies.map(c => c.symbol));
+        const duplicateSymbols = pastCards.filter(c => universeSymbols.has(c.symbol)).map(c => c.symbol);
+        if (duplicateSymbols.length > 0) {
+          console.warn(`[useCompanies] Found ${duplicateSymbols.length} symbols in BOTH universe and winners:`, duplicateSymbols.slice(0, 10));
+        }
 
         return [...universeCompanies, ...pastCards];
       }
