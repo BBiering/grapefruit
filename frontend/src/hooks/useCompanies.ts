@@ -164,6 +164,23 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 
   console.log(`[fetchUniverseCompanies] Found ${recentStepChanges.size} companies with step changes`);
 
+  // Query step change catalysts (explanations from Perplexity)
+  const stepChangeIds = Array.from(recentStepChanges.values()).map(sc => sc.id);
+  const { data: catalystExplanations } = await supabase
+    .from("step_change_catalysts")
+    .select("step_change_id, headline, summary, spike_explanation, was_foreseeable, foreseeable_evidence")
+    .in('step_change_id', stepChangeIds);
+
+  // Map explanations by step_change_id
+  const explanationsMap = new Map();
+  if (catalystExplanations) {
+    for (const exp of catalystExplanations) {
+      explanationsMap.set(exp.step_change_id, exp);
+    }
+  }
+
+  console.log(`[fetchUniverseCompanies] Found ${explanationsMap.size} step change explanations`);
+
   // Create metrics lookup
   const metricsMap = new Map(metricsData.map(m => [m.symbol, m]));
 
@@ -184,6 +201,14 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 
     // Get the most recent step change from separate query
     const recentStepChange = recentStepChanges.get(row.symbol) || null;
+
+    // Attach catalyst explanation if available
+    if (recentStepChange) {
+      const explanation = explanationsMap.get(recentStepChange.id);
+      if (explanation) {
+        recentStepChange.catalyst_explanation = explanation;
+      }
+    }
 
     const lastClose = latestPrices.get(row.symbol) || 0;
 

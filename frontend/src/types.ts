@@ -81,6 +81,7 @@ export interface StepChange {
   status: "held" | "faded";
   tier: "major" | "moderate" | "minor";
   detected_at: string;
+  catalyst_explanation?: StepChangeCatalyst;  // Attached when available
 }
 
 // NEW: Step change catalyst (replaces winner_catalysts)

@@ -89,6 +89,39 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
                 <CatalystCard catalyst={company.predicted_catalyst || company.forward_catalyst!} />
               )}
 
+              {/* Recent Step Change Explanation */}
+              {company.recent_step_change?.catalyst_explanation && (
+                <div className="card explanation">
+                  <div className="explanation-head">
+                    <h3>Recent Step Change</h3>
+                    <span className="badge">{company.recent_step_change.tier.toUpperCase()} ({company.recent_step_change.multiplier.toFixed(1)}x)</span>
+                  </div>
+                  <div className="explanation-body">
+                    {company.recent_step_change.catalyst_explanation.headline && (
+                      <h4>{company.recent_step_change.catalyst_explanation.headline}</h4>
+                    )}
+                    {company.recent_step_change.catalyst_explanation.summary && (
+                      <p>{company.recent_step_change.catalyst_explanation.summary}</p>
+                    )}
+                    {company.recent_step_change.catalyst_explanation.spike_explanation && (
+                      <>
+                        <h5>Why the spike?</h5>
+                        <p>{company.recent_step_change.catalyst_explanation.spike_explanation}</p>
+                      </>
+                    )}
+                    {company.recent_step_change.catalyst_explanation.foreseeable_evidence && (
+                      <>
+                        <h5>Was it foreseeable?</h5>
+                        <span className={`badge ${company.recent_step_change.catalyst_explanation.was_foreseeable ? "yes" : "no"}`}>
+                          {company.recent_step_change.catalyst_explanation.was_foreseeable ? "Yes" : "No"}
+                        </span>
+                        <p>{company.recent_step_change.catalyst_explanation.foreseeable_evidence}</p>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {/* Upcoming Events Card */}
               {company.upcoming_events && company.upcoming_events.length > 0 && (
                 <div className="card explanation">
