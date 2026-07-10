@@ -1,11 +1,13 @@
 """Weekly: build the universe of small-cap common stocks across European exchanges.
 
-For each exchange (XETRA, LSE, PA, HE, ST, CO, OL) we pull EODHD's bulk last-day
-"extended" feed (one HTTP call per exchange) which carries, per symbol, the name/type
-and market cap in the exchange's local currency. We convert market cap to USD via the
-FOREX endpoint, keep only common stocks in the small-cap band ($300M–$10B), and upsert
-into `assets` keyed by the full EODHD ticker (e.g. "BMW.XETRA"). The symbol list is
-snapshotted to `app_state['universe']`.
+Currently testing with France (PA - Euronext Paris) only. Other EU exchanges will be
+enabled after verification (XETRA, LSE, HE, ST, CO, OL).
+
+For each exchange we pull EODHD's bulk last-day "extended" feed (one HTTP call per
+exchange) which carries, per symbol, the name/type and market cap in the exchange's
+local currency. We convert market cap to USD via the FOREX endpoint, keep only common
+stocks in the small-cap band ($300M–$10B), and upsert into `assets` keyed by the full
+EODHD ticker (e.g. "LVMH.PA"). The symbol list is snapshotted to `app_state['universe']`.
 
 This is also the metadata source (name / market_cap_usd / exchange); the per-symbol
 /fundamentals endpoint is not on the current EODHD tier. A separate sector/industry

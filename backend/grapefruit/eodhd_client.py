@@ -26,11 +26,19 @@ _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 _TIMEOUT = 30.0
 
-# Exchanges that make up the universe. Focus is EU small-caps across 7 exchanges:
-# XETRA (Germany), LSE (UK), PA (France), HE (Finland), ST (Sweden), CO (Denmark), OL (Norway).
-# US exchanges excluded (user decision to pivot to European markets).
-# The symbol stored everywhere is the full EODHD ticker (e.g. "BMW.XETRA").
-EXCHANGES: list[str] = ["XETRA", "LSE", "PA", "HE", "ST", "CO", "OL"]
+# Exchanges that make up the universe. Currently testing with France (PA) only.
+# Other EU exchanges will be enabled after verification:
+# XETRA (Germany), LSE (UK), HE (Finland), ST (Sweden), CO (Denmark), OL (Norway).
+# The symbol stored everywhere is the full EODHD ticker (e.g. "LVMH.PA").
+EXCHANGES: list[str] = [
+    "PA",  # France (Euronext Paris) - testing first
+    # "XETRA",  # Germany - enable after PA verification
+    # "LSE",    # UK - enable after PA verification
+    # "HE",     # Finland - enable after PA verification
+    # "ST",     # Sweden - enable after PA verification
+    # "CO",     # Denmark - enable after PA verification
+    # "OL",     # Norway - enable after PA verification
+]
 
 # Reporting currency of each exchange's MarketCapitalization / prices. Used to
 # convert market cap to USD for the small-cap filter. LSE quotes in pence (GBX),
