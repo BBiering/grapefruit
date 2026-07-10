@@ -94,7 +94,7 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   // Get symbols that have metrics
   const symbolsWithMetrics = metricsData.map(m => m.symbol);
 
-  // Get latest prices from watchlist
+  // Get latest prices from watchlist (for now - TODO: create a materialized view)
   const { data: pricesData } = await supabase
     .from("watchlist")
     .select("symbol, last_close");
@@ -105,6 +105,8 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       latestPrices.set(row.symbol, row.last_close || 0);
     }
   }
+
+  console.log(`[fetchUniverseCompanies] Fetched prices for ${latestPrices.size} symbols from watchlist`);
 
   // Query assets for those symbols
   const { data, error } = await supabase
@@ -142,6 +144,11 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     // Handle predicted_catalysts - Supabase returns array or empty array
     const catalysts = Array.isArray(row.predicted_catalysts) ? row.predicted_catalysts : [];
     const catalyst = catalysts.find(c => c.detected) || null;
+
+    // Debug for DAR.US catalysts
+    if (row.symbol === "DAR.US") {
+      console.log("[fetchUniverseCompanies] DAR.US catalysts:", catalysts, "detected:", catalyst);
+    }
 
     // Get the most recent step change (by end_ts)
     const stepChanges = Array.isArray(row.step_change_history) ? row.step_change_history : [];
