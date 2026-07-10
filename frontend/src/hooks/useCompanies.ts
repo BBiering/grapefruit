@@ -94,10 +94,11 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   // Get symbols that have metrics
   const symbolsWithMetrics = metricsData.map(m => m.symbol);
 
-  // Get latest prices from watchlist (for now - TODO: create a materialized view)
+  // Get latest prices from materialized view
   const { data: pricesData } = await supabase
-    .from("watchlist")
-    .select("symbol, last_close");
+    .from("latest_prices")
+    .select("symbol, last_close")
+    .in('symbol', symbolsWithMetrics.slice(0, 500));
 
   const latestPrices = new Map<string, number>();
   if (pricesData) {
@@ -106,7 +107,7 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     }
   }
 
-  console.log(`[fetchUniverseCompanies] Fetched prices for ${latestPrices.size} symbols from watchlist`);
+  console.log(`[fetchUniverseCompanies] Fetched prices for ${latestPrices.size} symbols from latest_prices view`);
 
   // Query assets for those symbols
   const { data, error } = await supabase
