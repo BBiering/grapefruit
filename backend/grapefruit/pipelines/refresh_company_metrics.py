@@ -72,10 +72,6 @@ def run(batch_size: int = 100) -> int:
             fundamentals = eodhd_client.fetch_fundamentals(symbol)
             net_income, profit_margin = eodhd_client.fundamentals_highlights(fundamentals)
 
-            # Fetch insider activity
-            insider_txns = eodhd_client.fetch_insider_transactions(symbol)
-            insider_score_val = screening.insider_score(insider_txns)
-
             # Calculate quality score
             quality_score_val = screening.quality_score(net_income, profit_margin)
 
@@ -114,25 +110,13 @@ def run(batch_size: int = 100) -> int:
                             if current_assets and current_liabilities and current_liabilities != 0:
                                 current_ratio = current_assets / current_liabilities
 
-            # Calculate insider net value (acquisitions - dispositions)
-            insider_net_value = 0.0
-            if insider_txns:
-                for txn in insider_txns:
-                    txn_value = txn.get("transactionValue", 0) or 0
-                    txn_code = txn.get("transactionCode", "")
-                    if txn_code in ("P", "A"):  # Purchase/Award
-                        insider_net_value += txn_value
-                    elif txn_code in ("S", "D"):  # Sale/Disposition
-                        insider_net_value -= txn_value
-
             metrics_batch.append({
                 "symbol": symbol,
                 "quality_score": quality_score_val,
                 "net_income": net_income,
                 "profit_margin": profit_margin,
                 "revenue_ttm": revenue_ttm,
-                "insider_score": insider_score_val,
-                "insider_net_value": insider_net_value,
+                # insider_score and insider_net_value removed (US-only feature)
                 "roe": roe,
                 "debt_to_equity": debt_to_equity,
                 "current_ratio": current_ratio,
@@ -150,8 +134,7 @@ def run(batch_size: int = 100) -> int:
                 "net_income": None,
                 "profit_margin": None,
                 "revenue_ttm": None,
-                "insider_score": 50.0,  # Neutral
-                "insider_net_value": 0.0,
+                # insider_score and insider_net_value removed (US-only feature)
                 "roe": None,
                 "debt_to_equity": None,
                 "current_ratio": None,

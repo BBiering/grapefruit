@@ -56,30 +56,8 @@ def quality_score(net_income: float | None, profit_margin: float | None) -> floa
     return float(np.clip(score, 0.0, 100.0))
 
 
-def insider_score(transactions: list[dict]) -> float:
-    """0–100 from net insider *buy* value. Neutral (50) when there's no data.
-
-    EODHD insider rows have a `transactionAcquiredDisposed` ('A'/'D') and a
-    `transactionValue`. Net positive (more acquired than disposed) tilts up.
-    """
-    if not transactions:
-        return NEUTRAL
-    net = 0.0
-    saw_value = False
-    for t in transactions:
-        val = t.get("transactionValue") or t.get("value")
-        if not isinstance(val, (int, float)):
-            continue
-        saw_value = True
-        side = (t.get("transactionAcquiredDisposed") or t.get("ownership") or "").upper()
-        net += float(val) if side.startswith("A") else -float(val)
-    if not saw_value:
-        return NEUTRAL
-    if net > 0:
-        return float(min(100.0, NEUTRAL + 30.0 + min(20.0, net / 1_000_000.0)))
-    if net < 0:
-        return float(max(0.0, NEUTRAL - 20.0))
-    return NEUTRAL
+# NOTE: insider_score() removed - SEC Form 4 insider trading data only exists for US stocks.
+# EU has no equivalent standardized reporting through EODHD.
 
 
 def combined_score(

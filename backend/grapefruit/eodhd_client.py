@@ -264,14 +264,8 @@ def fundamentals_highlights(fundamentals: dict | None) -> tuple[float | None, fl
     return (float(ni) if ni is not None else None, float(pm) if pm is not None else None)
 
 
-def fetch_insider_transactions(symbol: str, limit: int = 100) -> list[dict]:
-    """SEC Form 4 insider transactions for `symbol` (`/insider-transactions`).
-
-    Returns [] if the endpoint is gated on the current plan (403) or there's no
-    data. `symbol` is a full EODHD ticker, e.g. "AAPL.US".
-    """
-    data = _get("insider-transactions", {"code": symbol, "limit": limit})
-    return data if isinstance(data, list) else []
+# NOTE: fetch_insider_transactions() removed - SEC Form 4 data only exists for US stocks.
+# EU has no equivalent standardized insider trading data through EODHD.
 
 
 def fetch_earnings_calendar(start: date, end: date, symbols: list[str] | None = None) -> list[dict]:

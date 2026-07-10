@@ -227,8 +227,8 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       upcoming_events: [],
     };
 
-    // Debug log for specific symbols with missing data
-    if (["DAR.US", "ABTC.US", "RGC.US", "RDN.US"].includes(row.symbol)) {
+    // Debug: log first few symbols to verify data quality
+    if (companies.length < 3) {
       console.log(`[fetchUniverseCompanies] ${row.symbol} raw data from DB:`, {
         name: row.name,
         sector: row.sector,

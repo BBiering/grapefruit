@@ -19,7 +19,7 @@ from grapefruit.pipelines import (
     refresh_universe,
     scan_tier1_biotech_catalysts,
     scan_tier1_spinoffs,
-    scan_tier2_earnings_contracts,
+    # scan_tier2_earnings_contracts,  # DISABLED: EODHD earnings calendar is US-only
     scan_tier3_structural_events,
     scan_universe_incremental,
 )
@@ -39,15 +39,15 @@ def run() -> int:
         detect_step_changes,            # 5. Find step changes (1.5x+, all tiers)
         refresh_sectors,                # 6. Populate sector/industry
 
-        # CATALYST DETECTION PIPELINES
+        # CATALYST DETECTION PIPELINES (EU-focused)
         scan_tier3_structural_events,   # 7. Reverse splits + index inclusion
-        scan_tier2_earnings_contracts,  # 8. Earnings calendar + contract awards
-        scan_tier1_biotech_catalysts,   # 9. FDA/trials for biotech sector
-        scan_tier1_spinoffs,            # 10. Spin-offs for top 300 market cap
-        scan_universe_incremental,      # 11. Rotate through 250 stocks/week
+        # scan_tier2_earnings_contracts DISABLED - earnings calendar is US-only (no EU equivalent)
+        scan_tier1_biotech_catalysts,   # 8. EMA/trials for biotech/pharma
+        scan_tier1_spinoffs,            # 9. Demergers for top 300 market cap
+        scan_universe_incremental,      # 10. Rotate through 250 stocks/week
 
-        enrich_catalysts,               # 12. Explain step changes (250/week budget)
-        compute_strategy_tags,          # 13. Generate strategy metadata
+        enrich_catalysts,               # 11. Explain step changes (250/week budget)
+        compute_strategy_tags,          # 12. Generate strategy metadata
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)
