@@ -19,6 +19,21 @@ export function Dashboard() {
 
   const { data: companies = [], isLoading } = useCompanies("all");
 
+  // Debug: Check for duplicates and missing data
+  console.log(`[Dashboard] Total companies: ${companies.length}`);
+  const symbolCounts = new Map<string, number>();
+  companies.forEach(c => symbolCounts.set(c.symbol, (symbolCounts.get(c.symbol) || 0) + 1));
+  const duplicates = Array.from(symbolCounts.entries()).filter(([_, count]) => count > 1);
+  if (duplicates.length > 0) {
+    console.warn(`[Dashboard] Found ${duplicates.length} duplicate symbols:`, duplicates);
+  }
+  const missingData = companies.filter(c => !c.name || c.name === c.symbol || c.sector === "Unknown");
+  if (missingData.length > 0) {
+    console.warn(`[Dashboard] Found ${missingData.length} companies with missing data:`,
+      missingData.slice(0, 5).map(c => ({ symbol: c.symbol, name: c.name, sector: c.sector, industry: c.industry }))
+    );
+  }
+
   // Get unique sectors, industries for filter dropdowns
   const { sectors, industries } = useMemo(() => {
     const sectorSet = new Set<string>();

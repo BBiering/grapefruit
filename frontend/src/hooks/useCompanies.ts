@@ -146,15 +146,25 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     throw error;
   }
 
-  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} assets`);
+  console.log(`[fetchUniverseCompanies] Fetched ${data?.length || 0} rows from assets query`);
 
   // Create metrics lookup
   const metricsMap = new Map(metricsData.map(m => [m.symbol, m]));
 
+  // Group by symbol to handle duplicates from step_change_history join
+  const assetsBySymbol = new Map<string, RawAssetWithMetrics>();
+  for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
+    if (!assetsBySymbol.has(row.symbol)) {
+      assetsBySymbol.set(row.symbol, row);
+    }
+  }
+
+  console.log(`[fetchUniverseCompanies] Unique assets after deduplication: ${assetsBySymbol.size}`);
+
   const companies: CompanyCard[] = [];
 
   try {
-    for (const row of (data ?? []) as unknown as RawAssetWithMetrics[]) {
+    for (const row of assetsBySymbol.values()) {
     const metrics = metricsMap.get(row.symbol) || null;
 
     // Skip if no metrics (shouldn't happen since we filtered above)
@@ -191,9 +201,9 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       upcoming_events: [],
     };
 
-    // Debug log for DAR.US
-    if (row.symbol === "DAR.US") {
-      console.log("[fetchUniverseCompanies] DAR.US data:", {
+    // Debug log for specific symbols
+    if (["DAR.US", "ABTC.US", "RGC.US"].includes(row.symbol)) {
+      console.log(`[fetchUniverseCompanies] ${row.symbol} data:`, {
         name: row.name,
         sector: row.sector,
         industry: row.industry,
