@@ -434,29 +434,9 @@ export function useCompanies(filter: "all" | "future" | "past" = "all") {
           return universeCompanies;
         }
 
-        // For "all", also fetch past winners
-        const winners = await fetchWinners();
-        const pastCards = winners.map(transformWinnerToCard);
-
-        console.log(`[useCompanies] Before merge: universeCompanies=${universeCompanies.length}, pastCards=${pastCards.length}`);
-
-        // Check for duplicates between universeCompanies and pastCards
-        const universeSymbols = new Set(universeCompanies.map(c => c.symbol));
-        const duplicateSymbols = pastCards.filter(c => universeSymbols.has(c.symbol)).map(c => c.symbol);
-        if (duplicateSymbols.length > 0) {
-          console.warn(`[useCompanies] Found ${duplicateSymbols.length} symbols in BOTH universe and winners:`, duplicateSymbols);
-          console.warn(`[useCompanies] Removing duplicates from pastCards to avoid showing same symbol twice`);
-        }
-
-        // Deduplicate: prefer universe data over winner data for symbols in both
-        const uniquePastCards = pastCards.filter(c => !universeSymbols.has(c.symbol));
-
-        console.log(`[useCompanies] After dedup: uniquePastCards=${uniquePastCards.length} (removed ${pastCards.length - uniquePastCards.length})`);
-
-        const combined = [...universeCompanies, ...uniquePastCards];
-        console.log(`[useCompanies] Returning combined array: ${combined.length} companies`);
-
-        return combined;
+        // For "all", just return universe companies (no separate past winners)
+        // Step changes are already included in universeCompanies via step_change_history
+        return universeCompanies;
       }
 
       // LEGACY: Watchlist-based data

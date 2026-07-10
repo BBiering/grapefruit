@@ -39,20 +39,28 @@ interface CompanyChartProps {
 
 // Parse catalyst period from expected_window text
 function parseCatalystPeriod(window: string | null | undefined): { startDate: string | null; endDate: string | null } {
-  if (!window) return { startDate: null, endDate: null };
+  if (!window) {
+    console.log("[parseCatalystPeriod] No window provided");
+    return { startDate: null, endDate: null };
+  }
+
+  console.log("[parseCatalystPeriod] Parsing:", window);
 
   // Try to extract date range: "2026-07-30 to 2026-08-04"
   const rangeMatch = window.match(/(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})/);
   if (rangeMatch) {
+    console.log("[parseCatalystPeriod] Found range:", rangeMatch[1], "to", rangeMatch[2]);
     return { startDate: rangeMatch[1], endDate: rangeMatch[2] };
   }
 
   // Try to extract single date: "2026-08-06"
   const singleMatch = window.match(/(\d{4}-\d{2}-\d{2})/);
   if (singleMatch) {
+    console.log("[parseCatalystPeriod] Found single date:", singleMatch[1]);
     return { startDate: singleMatch[1], endDate: null };
   }
 
+  console.log("[parseCatalystPeriod] No date found in format");
   return { startDate: null, endDate: null };
 }
 
@@ -147,20 +155,18 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentSt
             formatter={(value: any) => [`$${Number(value).toFixed(2)}`, "Price"]}
           />
 
-          {/* Past step change overlay (yellow) */}
+          {/* Past step change overlay (yellow) - no labels */}
           {(recentMove || winnerEvent || recentStepChange) && (
             <>
               <ReferenceLine
                 x={recentStepChange?.start_ts || recentMove?.start_ts || winnerEvent?.start_ts}
-                stroke="#6b6661"
-                strokeDasharray="3 3"
-                label={{ value: "Start", position: "top", fill: "#6b6661", fontSize: 11 }}
+                stroke="#f4bd4c"
+                strokeWidth={2}
               />
               <ReferenceLine
                 x={recentStepChange?.end_ts || recentMove?.end_ts || winnerEvent?.end_ts}
                 stroke="#f4bd4c"
-                strokeDasharray="3 3"
-                label={{ value: "Peak", position: "top", fill: "#f4bd4c", fontSize: 11 }}
+                strokeWidth={2}
               />
               <ReferenceArea
                 x1={recentStepChange?.start_ts || recentMove?.start_ts || winnerEvent?.start_ts}
@@ -171,7 +177,7 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentSt
             </>
           )}
 
-          {/* Future catalyst overlay (blue) */}
+          {/* Future catalyst overlay (blue) - no labels */}
           {catalyst?.detected && catalystPeriod.startDate && (
             <>
               {catalystPeriod.endDate ? (
@@ -180,14 +186,12 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentSt
                   <ReferenceLine
                     x={catalystPeriod.startDate}
                     stroke="#4c9aff"
-                    strokeDasharray="3 3"
-                    label={{ value: "Catalyst Start", position: "top", fill: "#4c9aff", fontSize: 11 }}
+                    strokeWidth={2}
                   />
                   <ReferenceLine
                     x={catalystPeriod.endDate}
                     stroke="#4c9aff"
-                    strokeDasharray="3 3"
-                    label={{ value: "Catalyst End", position: "top", fill: "#4c9aff", fontSize: 11 }}
+                    strokeWidth={2}
                   />
                   <ReferenceArea x1={catalystPeriod.startDate} x2={catalystPeriod.endDate} fill="#4c9aff" fillOpacity={0.15} />
                 </>
@@ -198,7 +202,6 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentSt
                     x={catalystPeriod.startDate}
                     stroke="#4c9aff"
                     strokeWidth={2}
-                    label={{ value: "Catalyst", position: "top", fill: "#4c9aff", fontSize: 11 }}
                   />
                 </>
               )}
