@@ -53,17 +53,17 @@ export function Dashboard() {
         }
       }
 
-      // Catalyst tier filter (by tier number: 1, 2, or 3)
+      // Catalyst tier filter (by tier_name)
       if (selectedTier !== "all") {
         const catalyst = company.predicted_catalyst || company.forward_catalyst;
         const hasCatalyst = catalyst?.detected;
-        const tier = catalyst?.tier;
+        const tierName = catalyst?.tier_name;
 
         if (selectedTier === "no_catalyst" && hasCatalyst) {
           return false;
         }
-        if (selectedTier === "1" || selectedTier === "2" || selectedTier === "3") {
-          if (!hasCatalyst || tier !== parseInt(selectedTier)) {
+        if (selectedTier !== "no_catalyst") {
+          if (!hasCatalyst || tierName !== selectedTier) {
             return false;
           }
         }
@@ -153,9 +153,9 @@ export function Dashboard() {
           <label>Catalyst Tier</label>
           <select value={selectedTier} onChange={(e) => setSelectedTier(e.target.value)}>
             <option value="all">All</option>
-            <option value="1">Tier 1 (High Confidence)</option>
-            <option value="2">Tier 2 (Medium Confidence)</option>
-            <option value="3">Tier 3 (Low Confidence)</option>
+            <option value="Systemic Volatility">Tier 1: Systemic Volatility (+100-500%)</option>
+            <option value="Corporate Acceleration">Tier 2: Corporate Acceleration (+20-50%)</option>
+            <option value="Structural Maintenance">Tier 3: Structural Maintenance (Volatile)</option>
             <option value="no_catalyst">No Catalyst</option>
           </select>
         </div>
