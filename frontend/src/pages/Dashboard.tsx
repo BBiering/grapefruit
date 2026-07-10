@@ -13,9 +13,8 @@ export function Dashboard() {
   const [selectedIndex, setSelectedIndex] = useState<number>(0);
 
   // Filter states
-  const [selectedSector, setSelectedSector] = useState<string>("all");
   const [selectedIndustry, setSelectedIndustry] = useState<string>("all");
-  const [selectedTier, setSelectedTier] = useState<string>("all");
+  const [selectedImpactType, setSelectedImpactType] = useState<string>("all");
 
   const { data: companies = [], isLoading } = useCompanies("all");
 
@@ -34,19 +33,23 @@ export function Dashboard() {
     );
   }
 
-  // Get unique sectors, industries for filter dropdowns
-  const { sectors, industries } = useMemo(() => {
-    const sectorSet = new Set<string>();
+  // Get unique industries and impact types for filter dropdowns
+  const { industries, impactTypes } = useMemo(() => {
     const industrySet = new Set<string>();
+    const impactTypeSet = new Set<string>();
 
     companies.forEach(c => {
-      if (c.sector && c.sector !== "Unknown") sectorSet.add(c.sector);
       if (c.industry && c.industry !== "Unknown") industrySet.add(c.industry);
+
+      const catalyst = c.predicted_catalyst || c.forward_catalyst;
+      if (catalyst?.detected && catalyst?.impact_type) {
+        impactTypeSet.add(catalyst.impact_type);
+      }
     });
 
     return {
-      sectors: Array.from(sectorSet).sort(),
       industries: Array.from(industrySet).sort(),
+      impactTypes: Array.from(impactTypeSet).sort(),
     };
   }, [companies]);
 
@@ -54,40 +57,24 @@ export function Dashboard() {
   const filteredAndSortedCompanies = useMemo(() => {
     // Apply filters first (AND logic: all filters must match)
     let filtered = companies.filter(company => {
-      // Sector filter
-      if (selectedSector !== "all") {
-        if (!company.sector || company.sector === "Unknown" || company.sector !== selectedSector) {
-          return false;
-        }
-      }
-
       // Industry filter
       if (selectedIndustry !== "all") {
         if (!company.industry || company.industry === "Unknown" || company.industry !== selectedIndustry) {
           return false;
         }
-
-        // Debug: Log companies that pass the Biotechnology filter
-        if (selectedIndustry === "Biotechnology" && ["ABTC.US", "RGC.US"].includes(company.symbol)) {
-          console.log(`[Filter Debug] ${company.symbol} passed Biotechnology filter:`, {
-            name: company.name,
-            sector: company.sector,
-            industry: company.industry,
-          });
-        }
       }
 
-      // Catalyst tier filter (by tier_name)
-      if (selectedTier !== "all") {
+      // Catalyst impact type filter (Tier 1 events only - Binary FDA, etc.)
+      if (selectedImpactType !== "all") {
         const catalyst = company.predicted_catalyst || company.forward_catalyst;
         const hasCatalyst = catalyst?.detected;
-        const tierName = catalyst?.tier_name;
+        const impactType = catalyst?.impact_type;
 
-        if (selectedTier === "no_catalyst" && hasCatalyst) {
+        if (selectedImpactType === "no_catalyst" && hasCatalyst) {
           return false;
         }
-        if (selectedTier !== "no_catalyst") {
-          if (!hasCatalyst || tierName !== selectedTier) {
+        if (selectedImpactType !== "no_catalyst") {
+          if (!hasCatalyst || impactType !== selectedImpactType) {
             return false;
           }
         }
@@ -124,7 +111,7 @@ export function Dashboard() {
           return 0;
       }
     });
-  }, [companies, sortBy, selectedSector, selectedIndustry, selectedTier]);
+  }, [companies, sortBy, selectedIndustry, selectedImpactType]);
 
   return (
     <div className="dashboard">
@@ -146,21 +133,6 @@ export function Dashboard() {
 
       {/* Sidebar Filters */}
       <aside className="sidebar glass">
-        <h3>Filters</h3>
-        <p className="filter-description">All filters combine (AND logic)</p>
-
-        <div className="filter-group">
-          <label>Sector</label>
-          <select value={selectedSector} onChange={(e) => setSelectedSector(e.target.value)}>
-            <option value="all">All Sectors</option>
-            {sectors.map(sector => (
-              <option key={sector} value={sector}>
-                {sector}
-              </option>
-            ))}
-          </select>
-        </div>
-
         <div className="filter-group">
           <label>Industry</label>
           <select value={selectedIndustry} onChange={(e) => setSelectedIndustry(e.target.value)}>
@@ -174,12 +146,14 @@ export function Dashboard() {
         </div>
 
         <div className="filter-group">
-          <label>Catalyst Tier</label>
-          <select value={selectedTier} onChange={(e) => setSelectedTier(e.target.value)}>
+          <label>Catalyst Event Type</label>
+          <select value={selectedImpactType} onChange={(e) => setSelectedImpactType(e.target.value)}>
             <option value="all">All</option>
-            <option value="Systemic Volatility">Tier 1: Systemic Volatility (+100-500%)</option>
-            <option value="Corporate Acceleration">Tier 2: Corporate Acceleration (+20-50%)</option>
-            <option value="Structural Maintenance">Tier 3: Structural Maintenance (Volatile)</option>
+            {impactTypes.map(type => (
+              <option key={type} value={type}>
+                {type}
+              </option>
+            ))}
             <option value="no_catalyst">No Catalyst</option>
           </select>
         </div>
@@ -187,18 +161,13 @@ export function Dashboard() {
         <button
           className="reset-filters"
           onClick={() => {
-            setSelectedSector("all");
             setSelectedIndustry("all");
-            setSelectedTier("all");
+            setSelectedImpactType("all");
           }}
-          disabled={selectedSector === "all" && selectedIndustry === "all" && selectedTier === "all"}
+          disabled={selectedIndustry === "all" && selectedImpactType === "all"}
         >
-          Reset All Filters
+          Reset Filters
         </button>
-
-        <div className="filter-results">
-          Showing {filteredAndSortedCompanies.length} of {companies.length} companies
-        </div>
       </aside>
 
       {/* Card Grid */}

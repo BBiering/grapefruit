@@ -913,36 +913,16 @@ code {
 .sidebar {
   grid-column: 1;
   padding: 1.5rem;
+  margin: 2rem 0 2rem 2rem;
+  border-radius: 16px;
   position: sticky;
-  top: 80px;
+  top: 100px;
   align-self: start;
   height: fit-content;
-  max-height: calc(100vh - 100px);
+  max-height: calc(100vh - 120px);
   overflow-y: auto;
 }
 
-.sidebar h3 {
-  margin: 0 0 0.5rem 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text);
-}
-
-.filter-description {
-  font-size: 0.8rem;
-  color: var(--muted);
-  margin: 0 0 1.5rem 0;
-  font-style: italic;
-}
-
-.filter-results {
-  margin-top: 1.5rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid var(--border);
-  font-size: 0.85rem;
-  color: var(--muted);
-  text-align: center;
-}
 
 .filter-group {
   margin-bottom: 1.5rem;
@@ -1021,6 +1001,7 @@ code {
     position: static;
     max-height: none;
     padding: 1rem;
+    margin: 1rem;
   }
 
   .card-grid {
