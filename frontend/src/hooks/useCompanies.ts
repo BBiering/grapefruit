@@ -112,7 +112,7 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   // First, get symbols with detected catalysts to prioritize them
   const { data: catalystData } = await supabase
     .from("predicted_catalysts")
-    .select("symbol, detected, event_name, impact_type, expected_window, strategic_summary, source_url, model, scanned_at")
+    .select("symbol, detected, event_name, impact_type, expected_window, strategic_summary, source_url, model, scanned_at, tier, tier_name, event_date, confidence_score")
     .eq("detected", true)
     .in('symbol', symbolsWithMetrics.slice(0, 1000))
     .limit(500);

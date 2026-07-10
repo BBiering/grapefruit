@@ -922,10 +922,26 @@ code {
 }
 
 .sidebar h3 {
-  margin: 0 0 1.5rem 0;
+  margin: 0 0 0.5rem 0;
   font-size: 1.1rem;
   font-weight: 600;
   color: var(--text);
+}
+
+.filter-description {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin: 0 0 1.5rem 0;
+  font-style: italic;
+}
+
+.filter-results {
+  margin-top: 1.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
 }
 
 .filter-group {

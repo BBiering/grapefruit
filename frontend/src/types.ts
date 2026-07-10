@@ -40,6 +40,10 @@ export interface PredictedCatalyst {
   source_url: string | null;
   model: string | null;
   scanned_at: string | null;
+  tier?: number | null;  // 1, 2, or 3
+  tier_name?: string | null;
+  event_date?: string | null;
+  confidence_score?: number | null;
 }
 
 // Legacy alias for backwards compatibility
