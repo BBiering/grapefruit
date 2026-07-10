@@ -109,16 +109,37 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 
   console.log(`[fetchUniverseCompanies] Fetched prices for ${latestPrices.size} symbols from latest_prices view`);
 
+  // First, get symbols with detected catalysts to prioritize them
+  const { data: catalystData } = await supabase
+    .from("predicted_catalysts")
+    .select("symbol, detected, event_name, impact_type, expected_window, strategic_summary")
+    .eq("detected", true)
+    .in('symbol', symbolsWithMetrics.slice(0, 1000))
+    .limit(500);
+
+  console.log(`[fetchUniverseCompanies] Found ${catalystData?.length || 0} symbols with catalysts`);
+
+  // Create catalyst lookup
+  const catalystsMap = new Map(
+    (catalystData || []).map(c => [c.symbol, c])
+  );
+
+  // Prioritize symbols with catalysts, then by market cap
+  const symbolsToFetch = [
+    ...Array.from(catalystsMap.keys()),  // Catalyst stocks first
+    ...symbolsWithMetrics.filter(s => !catalystsMap.has(s))  // Then others
+  ].slice(0, 500);
+
+  console.log(`[fetchUniverseCompanies] Fetching ${symbolsToFetch.length} assets (${catalystsMap.size} with catalysts)`);
+
   // Query assets for those symbols
   const { data, error } = await supabase
     .from("assets")
     .select(`
       symbol, name, exchange, sector, industry, market_cap_usd,
-      predicted_catalysts ( symbol, detected, event_name, impact_type, expected_window, strategic_summary ),
       step_change_history ( id, symbol, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status )
     `)
-    .in('symbol', symbolsWithMetrics.slice(0, 500))  // Limit to first 500 symbols with metrics
-    .order('market_cap_usd', { ascending: false, nullsFirst: false });
+    .in('symbol', symbolsToFetch);
 
   if (error) {
     console.error("Supabase query error:", error);
@@ -142,14 +163,8 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       continue;
     }
 
-    // Handle predicted_catalysts - Supabase returns array or empty array
-    const catalysts = Array.isArray(row.predicted_catalysts) ? row.predicted_catalysts : [];
-    const catalyst = catalysts.find(c => c.detected) || null;
-
-    // Debug for DAR.US catalysts
-    if (row.symbol === "DAR.US") {
-      console.log("[fetchUniverseCompanies] DAR.US catalysts:", catalysts, "detected:", catalyst);
-    }
+    // Get catalyst from our pre-fetched map
+    const catalyst = catalystsMap.get(row.symbol) || null;
 
     // Get the most recent step change (by end_ts)
     const stepChanges = Array.isArray(row.step_change_history) ? row.step_change_history : [];
