@@ -324,7 +324,19 @@ async function fetchWinners(): Promise<Winner[]> {
 
   if (error) throw error;
 
-  return ((data ?? []) as unknown as RawWinner[]).map((r) => {
+  console.log(`[fetchWinners] Fetched ${data?.length || 0} rows from winners table`);
+
+  // Deduplicate by symbol (in case joins create duplicate rows)
+  const winnersBySymbol = new Map<string, RawWinner>();
+  for (const row of (data ?? []) as unknown as RawWinner[]) {
+    if (!winnersBySymbol.has(row.symbol)) {
+      winnersBySymbol.set(row.symbol, row);
+    }
+  }
+
+  console.log(`[fetchWinners] Unique winners after dedup: ${winnersBySymbol.size}`);
+
+  return Array.from(winnersBySymbol.values()).map((r) => {
     const asset = r.assets[0] ?? null;
     const catalyst = r.winner_catalysts[0] ?? null;
     return {
@@ -401,7 +413,7 @@ function transformWinnerToCard(winner: Winner): CompanyCard {
 
 // Feature flag: use new universe-wide schema
 const USE_NEW_SCHEMA = true;  // ✅ Enabled: company_metrics populated with 2,693 stocks
-const SCHEMA_VERSION = 3;  // Increment to bust cache after query changes
+const SCHEMA_VERSION = 4;  // Increment to bust cache after query changes
 
 // Main hook: fetches and transforms companies based on filter
 export function useCompanies(filter: "all" | "future" | "past" = "all") {
@@ -426,14 +438,25 @@ export function useCompanies(filter: "all" | "future" | "past" = "all") {
         const winners = await fetchWinners();
         const pastCards = winners.map(transformWinnerToCard);
 
+        console.log(`[useCompanies] Before merge: universeCompanies=${universeCompanies.length}, pastCards=${pastCards.length}`);
+
         // Check for duplicates between universeCompanies and pastCards
         const universeSymbols = new Set(universeCompanies.map(c => c.symbol));
         const duplicateSymbols = pastCards.filter(c => universeSymbols.has(c.symbol)).map(c => c.symbol);
         if (duplicateSymbols.length > 0) {
-          console.warn(`[useCompanies] Found ${duplicateSymbols.length} symbols in BOTH universe and winners:`, duplicateSymbols.slice(0, 10));
+          console.warn(`[useCompanies] Found ${duplicateSymbols.length} symbols in BOTH universe and winners:`, duplicateSymbols);
+          console.warn(`[useCompanies] Removing duplicates from pastCards to avoid showing same symbol twice`);
         }
 
-        return [...universeCompanies, ...pastCards];
+        // Deduplicate: prefer universe data over winner data for symbols in both
+        const uniquePastCards = pastCards.filter(c => !universeSymbols.has(c.symbol));
+
+        console.log(`[useCompanies] After dedup: uniquePastCards=${uniquePastCards.length} (removed ${pastCards.length - uniquePastCards.length})`);
+
+        const combined = [...universeCompanies, ...uniquePastCards];
+        console.log(`[useCompanies] Returning combined array: ${combined.length} companies`);
+
+        return combined;
       }
 
       // LEGACY: Watchlist-based data
