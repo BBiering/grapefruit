@@ -224,6 +224,15 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   }
 
   console.log(`[fetchUniverseCompanies] Returning ${companies.length} companies`);
+  console.log(`[fetchUniverseCompanies] QUERY SUMMARY:
+    - company_metrics: ${metricsData?.length || 0}
+    - predicted_catalysts (detected=true): ${catalystsMap.size}
+    - assets queried: ${symbolsToFetch.length}
+    - assets returned: ${data?.length || 0}
+    - step_changes queried: ${stepChangesData?.length || 0}
+    - step_changes unique: ${recentStepChanges.size}
+    - final companies: ${companies.length}`);
+
   return companies;
 }
 
@@ -392,13 +401,14 @@ function transformWinnerToCard(winner: Winner): CompanyCard {
 
 // Feature flag: use new universe-wide schema
 const USE_NEW_SCHEMA = true;  // ✅ Enabled: company_metrics populated with 2,693 stocks
+const SCHEMA_VERSION = 3;  // Increment to bust cache after query changes
 
 // Main hook: fetches and transforms companies based on filter
 export function useCompanies(filter: "all" | "future" | "past" = "all") {
-  console.log(`[useCompanies] Called with filter="${filter}", USE_NEW_SCHEMA=${USE_NEW_SCHEMA}`);
+  console.log(`[useCompanies] Called with filter="${filter}", USE_NEW_SCHEMA=${USE_NEW_SCHEMA}, version=${SCHEMA_VERSION}`);
 
   return useQuery({
-    queryKey: ["companies", filter, USE_NEW_SCHEMA],
+    queryKey: ["companies", filter, USE_NEW_SCHEMA, SCHEMA_VERSION],
     queryFn: async (): Promise<CompanyCard[]> => {
       console.log(`[useCompanies] Query function executing: filter="${filter}", USE_NEW_SCHEMA=${USE_NEW_SCHEMA}`);
 
