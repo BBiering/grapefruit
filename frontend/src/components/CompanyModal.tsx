@@ -4,6 +4,7 @@ import type { CompanyCard } from "../types";
 import { CompanyChart } from "./CompanyChart";
 import { StatsGrid } from "./StatsGrid";
 import { CatalystCard } from "./CatalystCard";
+import { displaySymbol, exchangeToFlag } from "../utils";
 
 interface Bar {
   ts: string;
@@ -61,7 +62,7 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
         {/* Header */}
         <div className="modal-header">
           <h2>
-            {company.symbol} - {company.name}
+            {displaySymbol(company.symbol)} — {company.name} {exchangeToFlag(company.exchange)}
           </h2>
           <p className="muted">
             {company.sector} / {company.industry}
@@ -71,8 +72,6 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
         {/* Full Chart */}
         <CompanyChart
           bars={bars}
-          recentMove={company.recent_move}
-          winnerEvent={company.winner_event}
           catalyst={company.predicted_catalyst || company.forward_catalyst}
           recentStepChange={company.recent_step_change}
         />

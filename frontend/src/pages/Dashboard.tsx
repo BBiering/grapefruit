@@ -16,7 +16,7 @@ export function Dashboard() {
   const [selectedIndustry, setSelectedIndustry] = useState<string>("all");
   const [selectedImpactType, setSelectedImpactType] = useState<string>("all");
 
-  const { data: companies = [], isLoading } = useCompanies("all");
+  const { data: companies = [], isLoading } = useCompanies();
 
   // Debug: Check for duplicates and missing data
   console.log(`[Dashboard] Total companies: ${companies.length}`);

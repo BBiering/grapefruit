@@ -1,35 +1,3 @@
-export interface Winner {
-  id: number;
-  symbol: string;
-  start_ts: string;
-  end_ts: string;
-  days_to_peak: number;
-  trough_price: number;
-  peak_price: number;
-  multiplier: number;
-  post_peak_retention: number | null;
-  breakout_ratio: number | null;
-  market_cap_usd_at_peak: number | null;
-  sector: string | null;
-  industry: string | null;
-  status: "held" | "faded";
-  detected_at: string;
-  // joined from assets
-  name: string | null;
-  // joined from winner_catalysts
-  headline: string | null;
-  summary: string | null;
-  spike_explanation: string | null;
-  was_foreseeable: boolean | null;
-  foreseeable_evidence: string | null;
-}
-
-export interface Bar {
-  ts: string;
-  close: number;
-}
-
-// Renamed from ForwardCatalyst
 export interface PredictedCatalyst {
   symbol: string;
   detected: boolean | null;
@@ -49,7 +17,6 @@ export interface PredictedCatalyst {
 // Legacy alias for backwards compatibility
 export type ForwardCatalyst = PredictedCatalyst;
 
-// NEW: Company metrics (universe-wide quality data)
 export interface CompanyMetrics {
   symbol: string;
   quality_score: number | null;
@@ -65,7 +32,6 @@ export interface CompanyMetrics {
   data_as_of: string | null;
 }
 
-// NEW: Step change history (replaces winners + watchlist_moves)
 export interface StepChange {
   id: number;
   symbol: string;
@@ -81,10 +47,9 @@ export interface StepChange {
   status: "held" | "faded";
   tier: "major" | "moderate" | "minor";
   detected_at: string;
-  catalyst_explanation?: StepChangeCatalyst;  // Attached when available
+  catalyst_explanation?: StepChangeCatalyst;
 }
 
-// NEW: Step change catalyst (replaces winner_catalysts)
 export interface StepChangeCatalyst {
   step_change_id: number;
   headline: string | null;
@@ -97,42 +62,6 @@ export interface StepChangeCatalyst {
   fetched_at: string;
 }
 
-export interface WatchlistMove {
-  symbol: string;
-  start_ts: string;
-  end_ts: string;
-  trough_price: number;
-  peak_price: number;
-  multiplier: number;
-  days_to_peak: number;
-}
-
-export interface WatchlistRow {
-  symbol: string;
-  last_close: number | null;
-  market_cap_usd: number | null;
-  sector: string | null;
-  industry: string | null;
-  why_listed: string;
-  added_at: string;
-  // screener scores (momentum removed from strategy)
-  dollar_volume: number | null;
-  quality_score: number | null;
-  combined_score: number | null;
-  rank: number | null;
-  strategy_tag: "Buy Manually" | "Watchlist" | "Pass" | null;
-  // joined from assets
-  name: string | null;
-  // joined from upcoming_events (nearest)
-  next_event_ts: string | null;
-  next_event_type: string | null;
-  next_event_title: string | null;
-  // joined from forward_catalysts
-  catalyst: ForwardCatalyst | null;
-  // joined from watchlist_moves (recent step-change event)
-  move: WatchlistMove | null;
-}
-
 export interface UpcomingEvent {
   symbol: string;
   event_ts: string;
@@ -140,7 +69,7 @@ export interface UpcomingEvent {
   title: string | null;
 }
 
-// Unified company card interface for both future and past companies
+// Unified company card interface
 export interface CompanyCard {
   symbol: string;
   name: string;
@@ -148,14 +77,17 @@ export interface CompanyCard {
   industry: string;
   type: "future" | "past";
 
-  // Price data (always present)
+  // Exchange
+  exchange?: string;
+
+  // Price data
   last_close: number;
   market_cap_usd?: number;
 
-  // Quality (always present)
+  // Quality
   quality_score: number;
 
-  // Strategy (future only)
+  // Strategy
   strategy_tag?: "Buy Manually" | "Watchlist" | "Pass";
   combined_score?: number;
 
@@ -167,16 +99,9 @@ export interface CompanyCard {
   was_foreseeable?: boolean;
 
   // Catalyst data
-  forward_catalyst?: ForwardCatalyst;  // Keep for backwards compatibility
-  predicted_catalyst?: PredictedCatalyst;  // NEW: Use this going forward
-  recent_step_change?: StepChange;  // NEW: Replaces recent_move and winner_event
-  recent_move?: WatchlistMove;  // LEGACY: Keep for backwards compatibility
-  winner_event?: {  // LEGACY: Keep for backwards compatibility
-    start_ts: string;
-    end_ts: string;
-    trough_price: number;
-    peak_price: number;
-  };
+  forward_catalyst?: ForwardCatalyst;
+  predicted_catalyst?: PredictedCatalyst;
+  recent_step_change?: StepChange;
   upcoming_events?: UpcomingEvent[];
 
   // Past winner explanations

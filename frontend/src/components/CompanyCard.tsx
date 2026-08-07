@@ -1,5 +1,5 @@
 import type { CompanyCard as CompanyCardType } from "../types";
-import { displaySymbol, formatPrice, formatMoney } from "../utils";
+import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
 import { QualityBadge } from "./QualityBadge";
 import { StrategyBadge } from "./StrategyBadge";
 import { MiniChart } from "./MiniChart";
@@ -12,10 +12,9 @@ interface CompanyCardProps {
 export function CompanyCard({ company, onClick }: CompanyCardProps) {
   return (
     <div className="card company-card" onClick={onClick}>
-      {/* Header: Symbol + Name */}
+      {/* Header: Symbol - Name - Flag */}
       <div className="card-header">
-        <h3>{displaySymbol(company.symbol)}</h3>
-        <p className="muted">{company.name}</p>
+        <h3>{displaySymbol(company.symbol)} — {company.name} {exchangeToFlag(company.exchange)}</h3>
       </div>
 
       {/* Metadata: Sector / Industry */}
@@ -44,8 +43,6 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
       {/* Mini Chart */}
       <MiniChart
         symbol={company.symbol}
-        recentMove={company.recent_move}
-        winnerEvent={company.winner_event}
         catalyst={company.forward_catalyst}
       />
     </div>

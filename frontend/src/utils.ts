@@ -33,6 +33,23 @@ export function displaySymbol(symbol: string): string {
   return symbol.includes(".") ? symbol.slice(0, symbol.lastIndexOf(".")) : symbol;
 }
 
+// Map EODHD exchange suffix to country flag
+const EXCHANGE_FLAGS: Record<string, string> = {
+  US: "🇺🇸",
+  PA: "🇫🇷",
+  XETRA: "🇩🇪",
+  LSE: "🇬🇧",
+  HE: "🇫🇮",
+  ST: "🇸🇪",
+  CO: "🇩🇰",
+  OL: "🇳🇴",
+};
+
+export function exchangeToFlag(exchange: string | null | undefined): string {
+  if (!exchange) return "";
+  return EXCHANGE_FLAGS[exchange] || exchange;
+}
+
 // Get quality badge level based on score
 export function getQualityLevel(score: number): "high" | "medium" | "low" {
   if (score >= 70) return "high";

@@ -10,7 +10,7 @@ import {
   ReferenceArea,
   CartesianGrid,
 } from "recharts";
-import type { WatchlistMove, ForwardCatalyst } from "../types";
+import type { ForwardCatalyst } from "../types";
 
 interface Bar {
   ts: string;
@@ -19,15 +19,7 @@ interface Bar {
 
 interface CompanyChartProps {
   bars: Bar[];
-  recentMove?: WatchlistMove;
-  winnerEvent?: {
-    start_ts: string;
-    end_ts: string;
-    trough_price: number;
-    peak_price: number;
-  };
   catalyst?: ForwardCatalyst;
-  // NEW: Support for step_change_history
   recentStepChange?: {
     start_ts: string;
     end_ts: string;
@@ -64,7 +56,7 @@ function parseCatalystPeriod(window: string | null | undefined): { startDate: st
   return { startDate: null, endDate: null };
 }
 
-export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentStepChange }: CompanyChartProps) {
+export function CompanyChart({ bars, catalyst, recentStepChange }: CompanyChartProps) {
   const extendedData = useMemo(() => {
     if (!bars.length) return [];
 
@@ -155,22 +147,22 @@ export function CompanyChart({ bars, recentMove, winnerEvent, catalyst, recentSt
             formatter={(value: any) => [`$${Number(value).toFixed(2)}`, "Price"]}
           />
 
-          {/* Past step change overlay (yellow) - no labels */}
-          {(recentMove || winnerEvent || recentStepChange) && (
+          {/* Step change overlay (yellow) */}
+          {recentStepChange && (
             <>
               <ReferenceLine
-                x={recentStepChange?.start_ts || recentMove?.start_ts || winnerEvent?.start_ts}
+                x={recentStepChange.start_ts}
                 stroke="#f4bd4c"
                 strokeWidth={2}
               />
               <ReferenceLine
-                x={recentStepChange?.end_ts || recentMove?.end_ts || winnerEvent?.end_ts}
+                x={recentStepChange.end_ts}
                 stroke="#f4bd4c"
                 strokeWidth={2}
               />
               <ReferenceArea
-                x1={recentStepChange?.start_ts || recentMove?.start_ts || winnerEvent?.start_ts}
-                x2={recentStepChange?.end_ts || recentMove?.end_ts || winnerEvent?.end_ts}
+                x1={recentStepChange.start_ts}
+                x2={recentStepChange.end_ts}
                 fill="#f4bd4c"
                 fillOpacity={0.15}
               />
