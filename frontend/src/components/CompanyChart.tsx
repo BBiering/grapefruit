@@ -10,7 +10,7 @@ import {
   ReferenceArea,
   CartesianGrid,
 } from "recharts";
-import type { ForwardCatalyst } from "../types";
+import type { PredictedCatalyst } from "../types";
 
 interface Bar {
   ts: string;
@@ -19,7 +19,7 @@ interface Bar {
 
 interface CompanyChartProps {
   bars: Bar[];
-  catalyst?: ForwardCatalyst;
+  catalyst?: PredictedCatalyst;
   recentStepChange?: {
     start_ts: string;
     end_ts: string;

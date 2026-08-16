@@ -704,9 +704,9 @@ code {
 
 /* Mini Chart */
 .mini-chart {
-  flex: 1;
-  min-height: 150px;
+  height: 150px;
   margin: 0.5rem 0;
+  overflow: hidden;
 }
 
 .mini-chart.loading {

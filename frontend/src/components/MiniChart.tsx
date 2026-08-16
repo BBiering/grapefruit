@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { LineChart, Line, ResponsiveContainer, ReferenceLine } from "recharts";
+import { LineChart, Line, ReferenceLine } from "recharts";
 import { supabase } from "../supabase";
-import type { ForwardCatalyst } from "../types";
+import type { PredictedCatalyst } from "../types";
 
 interface Bar {
   ts: string;
@@ -10,7 +10,7 @@ interface Bar {
 
 interface MiniChartProps {
   symbol: string;
-  catalyst?: ForwardCatalyst;
+  catalyst?: PredictedCatalyst;
 }
 
 async function fetchBars(symbol: string): Promise<Bar[]> {
@@ -38,22 +38,20 @@ export function MiniChart({ symbol, catalyst }: MiniChartProps) {
 
   return (
     <div className="mini-chart">
-      <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={bars} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-          {catalyst?.detected && catalyst.expected_window && (
-            <ReferenceLine x={catalyst.expected_window} stroke="#4c9aff" strokeDasharray="3 3" strokeWidth={1.5} />
-          )}
+      <LineChart width={260} height={140} data={bars} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
+        {catalyst?.detected && catalyst.expected_window && (
+          <ReferenceLine x={catalyst.expected_window} stroke="#4c9aff" strokeDasharray="3 3" strokeWidth={1.5} />
+        )}
 
-          <Line
-            type="monotone"
-            dataKey="close"
-            stroke="#e8664f"
-            strokeWidth={1.5}
-            dot={false}
-            isAnimationActive={false}
-          />
-        </LineChart>
-      </ResponsiveContainer>
+        <Line
+          type="monotone"
+          dataKey="close"
+          stroke="#e8664f"
+          strokeWidth={1.5}
+          dot={false}
+          isAnimationActive={false}
+        />
+      </LineChart>
     </div>
   );
 }

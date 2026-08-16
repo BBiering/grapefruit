@@ -33,8 +33,8 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
       {/* Quality Score + Badge */}
       <QualityBadge score={company.quality_score} />
 
-      {/* Strategy Badge (future only) */}
-      {company.type === "future" && company.strategy_tag && (
+      {/* Strategy Badge */}
+      {company.strategy_tag && (
         <div className="card-strategy">
           <StrategyBadge tag={company.strategy_tag} />
         </div>
@@ -43,7 +43,7 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
       {/* Mini Chart */}
       <MiniChart
         symbol={company.symbol}
-        catalyst={company.forward_catalyst}
+        catalyst={company.predicted_catalyst}
       />
     </div>
   );

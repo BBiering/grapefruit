@@ -8,14 +8,11 @@ export interface PredictedCatalyst {
   source_url: string | null;
   model: string | null;
   scanned_at: string | null;
-  tier?: number | null;  // 1, 2, or 3
+  tier?: number | null;
   tier_name?: string | null;
   event_date?: string | null;
   confidence_score?: number | null;
 }
-
-// Legacy alias for backwards compatibility
-export type ForwardCatalyst = PredictedCatalyst;
 
 export interface CompanyMetrics {
   symbol: string;
@@ -69,13 +66,11 @@ export interface UpcomingEvent {
   title: string | null;
 }
 
-// Unified company card interface
 export interface CompanyCard {
   symbol: string;
   name: string;
   sector: string;
   industry: string;
-  type: "future" | "past";
 
   // Exchange
   exchange?: string;
@@ -91,22 +86,8 @@ export interface CompanyCard {
   strategy_tag?: "Buy Manually" | "Watchlist" | "Pass";
   combined_score?: number;
 
-  // Past winner metadata
-  multiplier?: number;
-  days_to_peak?: number;
-  trough_price?: number;
-  peak_price?: number;
-  was_foreseeable?: boolean;
-
   // Catalyst data
-  forward_catalyst?: ForwardCatalyst;
   predicted_catalyst?: PredictedCatalyst;
   recent_step_change?: StepChange;
   upcoming_events?: UpcomingEvent[];
-
-  // Past winner explanations
-  headline?: string;
-  summary?: string;
-  spike_explanation?: string;
-  foreseeable_evidence?: string;
 }

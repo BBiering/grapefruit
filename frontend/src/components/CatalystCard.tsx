@@ -1,7 +1,7 @@
-import type { ForwardCatalyst } from "../types";
+import type { PredictedCatalyst } from "../types";
 
 interface CatalystCardProps {
-  catalyst: ForwardCatalyst;
+  catalyst: PredictedCatalyst;
 }
 
 export function CatalystCard({ catalyst }: CatalystCardProps) {

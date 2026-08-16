@@ -28,13 +28,7 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
   const { data: bars = [] } = useQuery({
     queryKey: ["bars", company.symbol],
     queryFn: () => fetchBars(company.symbol),
-    staleTime: 10 * 60 * 1000, // 10 minutes
-  });
-
-  // Debug: Log catalyst data
-  console.log(`[CompanyModal] ${company.symbol} catalyst data:`, {
-    predicted_catalyst: company.predicted_catalyst,
-    forward_catalyst: company.forward_catalyst,
+    staleTime: 10 * 60 * 1000,
   });
 
   // Handle keyboard navigation
@@ -72,7 +66,7 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
         {/* Full Chart */}
         <CompanyChart
           bars={bars}
-          catalyst={company.predicted_catalyst || company.forward_catalyst}
+          catalyst={company.predicted_catalyst}
           recentStepChange={company.recent_step_change}
         />
 
@@ -81,107 +75,60 @@ export function CompanyModal({ company, onClose, onNext, onPrev }: CompanyModalP
 
         {/* Explanation Cards */}
         <div className="explanation-cards">
-          {company.type === "future" ? (
-            <>
-              {/* Forward Catalyst Card */}
-              {(company.predicted_catalyst?.detected || company.forward_catalyst?.detected) && (
-                <CatalystCard catalyst={company.predicted_catalyst || company.forward_catalyst!} />
-              )}
+          {/* Forward Catalyst Card */}
+          {company.predicted_catalyst?.detected && (
+            <CatalystCard catalyst={company.predicted_catalyst} />
+          )}
 
-              {/* Recent Step Change Explanation */}
-              {company.recent_step_change?.catalyst_explanation && (
-                <div className="card explanation">
-                  <div className="explanation-head">
-                    <h3>Recent Step Change</h3>
-                    <span className="badge">{company.recent_step_change.tier.toUpperCase()} ({company.recent_step_change.multiplier.toFixed(1)}x)</span>
-                  </div>
-                  <div className="explanation-body">
-                    {company.recent_step_change.catalyst_explanation.headline && (
-                      <h4>{company.recent_step_change.catalyst_explanation.headline}</h4>
-                    )}
-                    {company.recent_step_change.catalyst_explanation.summary && (
-                      <p>{company.recent_step_change.catalyst_explanation.summary}</p>
-                    )}
-                    {company.recent_step_change.catalyst_explanation.spike_explanation && (
-                      <>
-                        <h5>Why the spike?</h5>
-                        <p>{company.recent_step_change.catalyst_explanation.spike_explanation}</p>
-                      </>
-                    )}
-                    {company.recent_step_change.catalyst_explanation.foreseeable_evidence && (
-                      <>
-                        <h5>Was it foreseeable?</h5>
-                        <span className={`badge ${company.recent_step_change.catalyst_explanation.was_foreseeable ? "yes" : "no"}`}>
-                          {company.recent_step_change.catalyst_explanation.was_foreseeable ? "Yes" : "No"}
-                        </span>
-                        <p>{company.recent_step_change.catalyst_explanation.foreseeable_evidence}</p>
-                      </>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Upcoming Events Card */}
-              {company.upcoming_events && company.upcoming_events.length > 0 && (
-                <div className="card explanation">
-                  <div className="explanation-head">
-                    <h3>Next Earnings</h3>
-                    <span className="badge">Scheduled</span>
-                  </div>
-                  <div className="explanation-body">
-                    <p>
-                      <strong>Date:</strong> {company.upcoming_events[0].event_ts}
-                    </p>
-                    <p>
-                      <strong>Event:</strong> {company.upcoming_events[0].title || "Earnings Report"}
-                    </p>
-                  </div>
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              {/* Past Winner: Catalyst Explanation */}
-              {company.headline && (
-                <div className="card explanation">
-                  <div className="explanation-head">
-                    <h3>Catalyst</h3>
-                    <span className="badge">Historical</span>
-                  </div>
-                  <div className="explanation-body">
-                    <h4>{company.headline}</h4>
-                    <p>{company.summary}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Spike Explanation */}
-              {company.spike_explanation && (
-                <div className="card explanation">
-                  <div className="explanation-head">
-                    <h3>Spike Explanation</h3>
-                  </div>
-                  <div className="explanation-body">
-                    <p>{company.spike_explanation}</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Foreseeable Evidence */}
-              {company.foreseeable_evidence && (
-                <div className="card explanation">
-                  <div className="explanation-head">
-                    <h3>Foreseeable Evidence</h3>
-                    <span className={`badge ${company.was_foreseeable ? "yes" : "no"}`}>
-                      {company.was_foreseeable ? "Yes" : "No"}
+          {/* Recent Step Change Explanation */}
+          {company.recent_step_change?.catalyst_explanation && (
+            <div className="card explanation">
+              <div className="explanation-head">
+                <h3>Recent Step Change</h3>
+                <span className="badge">{company.recent_step_change.tier.toUpperCase()} ({company.recent_step_change.multiplier.toFixed(1)}x)</span>
+              </div>
+              <div className="explanation-body">
+                {company.recent_step_change.catalyst_explanation.headline && (
+                  <h4>{company.recent_step_change.catalyst_explanation.headline}</h4>
+                )}
+                {company.recent_step_change.catalyst_explanation.summary && (
+                  <p>{company.recent_step_change.catalyst_explanation.summary}</p>
+                )}
+                {company.recent_step_change.catalyst_explanation.spike_explanation && (
+                  <>
+                    <h5>Why the spike?</h5>
+                    <p>{company.recent_step_change.catalyst_explanation.spike_explanation}</p>
+                  </>
+                )}
+                {company.recent_step_change.catalyst_explanation.foreseeable_evidence && (
+                  <>
+                    <h5>Was it foreseeable?</h5>
+                    <span className={`badge ${company.recent_step_change.catalyst_explanation.was_foreseeable ? "yes" : "no"}`}>
+                      {company.recent_step_change.catalyst_explanation.was_foreseeable ? "Yes" : "No"}
                     </span>
-                  </div>
-                  <div className="explanation-body">
-                    <p>{company.foreseeable_evidence}</p>
-                  </div>
-                </div>
-              )}
-            </>
+                    <p>{company.recent_step_change.catalyst_explanation.foreseeable_evidence}</p>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Upcoming Events Card */}
+          {company.upcoming_events && company.upcoming_events.length > 0 && (
+            <div className="card explanation">
+              <div className="explanation-head">
+                <h3>Next Earnings</h3>
+                <span className="badge">Scheduled</span>
+              </div>
+              <div className="explanation-body">
+                <p>
+                  <strong>Date:</strong> {company.upcoming_events[0].event_ts}
+                </p>
+                <p>
+                  <strong>Event:</strong> {company.upcoming_events[0].title || "Earnings Report"}
+                </p>
+              </div>
+            </div>
           )}
         </div>
       </div>

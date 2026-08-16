@@ -4,7 +4,6 @@ import { CompanyCard } from "../components/CompanyCard";
 import { CompanyModal } from "../components/CompanyModal";
 import type { CompanyCard as CompanyCardType } from "../types";
 
-type Filter = "all" | "future" | "past";
 type SortBy = "score" | "price" | "marketcap";
 
 export function Dashboard() {
@@ -41,9 +40,8 @@ export function Dashboard() {
     companies.forEach(c => {
       if (c.industry && c.industry !== "Unknown") industrySet.add(c.industry);
 
-      const catalyst = c.predicted_catalyst || c.forward_catalyst;
-      if (catalyst?.detected && catalyst?.impact_type) {
-        impactTypeSet.add(catalyst.impact_type);
+      if (c.predicted_catalyst?.detected && c.predicted_catalyst?.impact_type) {
+        impactTypeSet.add(c.predicted_catalyst.impact_type);
       }
     });
 
@@ -66,9 +64,8 @@ export function Dashboard() {
 
       // Catalyst impact type filter (Tier 1 events only - Binary FDA, etc.)
       if (selectedImpactType !== "all") {
-        const catalyst = company.predicted_catalyst || company.forward_catalyst;
-        const hasCatalyst = catalyst?.detected;
-        const impactType = catalyst?.impact_type;
+        const hasCatalyst = company.predicted_catalyst?.detected;
+        const impactType = company.predicted_catalyst?.impact_type;
 
         if (selectedImpactType === "no_catalyst" && hasCatalyst) {
           return false;
@@ -88,9 +85,9 @@ export function Dashboard() {
       switch (sortBy) {
         case "score":
           // Sort by: 1) Tier (lower = higher priority), 2) Event date (soonest), 3) Quality (highest)
-          // Get tier from forward_catalyst or use 999 for no catalyst
-          const tierA = a.forward_catalyst?.detected ? 1 : 999; // Simplified tier logic
-          const tierB = b.forward_catalyst?.detected ? 1 : 999;
+          // Get tier from predicted_catalyst or use 999 for no catalyst
+          const tierA = a.predicted_catalyst?.detected ? 1 : 999;
+          const tierB = b.predicted_catalyst?.detected ? 1 : 999;
 
           if (tierA !== tierB) return tierA - tierB;
 
