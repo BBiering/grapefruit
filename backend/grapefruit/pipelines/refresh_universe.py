@@ -22,21 +22,16 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-# Market cap band: $10M floor catches Euronext Growth companies (typically
-# €10M–€1B). The $10B ceiling excludes mega-caps like LVMH and L'Oréal.
-MIN_MARKET_CAP_USD = 10e6
-MAX_MARKET_CAP_USD = 10e9
+# Market cap band applied in the exchange's NATIVE currency before USD
+# conversion, so the universe is stable regardless of EUR/USD fluctuations.
+# $10M floor catches Euronext Growth; ~$10B ceiling excludes mega-caps.
+NATIVE_MARKET_CAP_MIN = 10e6   # ~$10M
+NATIVE_MARKET_CAP_MAX = 9e9    # ~€9B / ~$10.4B at EUR/USD 1.16
 
 # Ticker prefixes for Euronext segments on the PA exchange.
 # AL* = Euronext Growth (formerly Alternext) — include.
 # ML* = Euronext Access / Access+ (formerly Marché Libre) — exclude for now.
 _EXCLUDE_PREFIXES = ("ML",)
-
-
-def _market_cap_usd(raw_cap, fx: float) -> float | None:
-    if not isinstance(raw_cap, (int, float)) or raw_cap <= 0:
-        return None
-    return float(raw_cap) * fx
 
 
 def _cleanup_us_symbols() -> int:
@@ -80,11 +75,12 @@ def run() -> int:
             if isin and isin in seen_isins:
                 continue
 
-            cap_usd = _market_cap_usd(
-                r.get("MarketCapitalization") or r.get("market_capitalization"), fx
-            )
-            if cap_usd is None or not (MIN_MARKET_CAP_USD <= cap_usd <= MAX_MARKET_CAP_USD):
+            raw_cap = r.get("MarketCapitalization") or r.get("market_capitalization")
+            if not isinstance(raw_cap, (int, float)) or raw_cap <= 0:
                 continue
+            if not (NATIVE_MARKET_CAP_MIN <= raw_cap <= NATIVE_MARKET_CAP_MAX):
+                continue
+            cap_usd = float(raw_cap) * fx
 
             if isin:
                 seen_isins.add(isin)
@@ -120,8 +116,8 @@ def run() -> int:
             "symbols": symbols,
             "count": len(symbols),
             "exchanges": eodhd_client.EXCHANGES,
-            "min_market_cap_usd": MIN_MARKET_CAP_USD,
-            "max_market_cap_usd": MAX_MARKET_CAP_USD,
+            "native_market_cap_min": NATIVE_MARKET_CAP_MIN,
+            "native_market_cap_max": NATIVE_MARKET_CAP_MAX,
             "refreshed_at": now.isoformat(),
         },
     )
