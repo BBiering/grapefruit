@@ -1,17 +1,16 @@
-"""Weekly: build the universe of small-cap common stocks across European exchanges.
+"""Weekly: build the universe of small/mid-cap common stocks on Euronext Paris.
 
-Currently testing with France (PA - Euronext Paris) only. Other EU exchanges will be
-enabled after verification (XETRA, LSE, HE, ST, CO, OL).
+Targets Euronext Paris main market + Euronext Growth (AL-prefix), excludes
+Euronext Access (ML-prefix). Other EU exchanges (XETRA, LSE, HE, ST, CO, OL)
+are disabled until verified.
 
 For each exchange we pull EODHD's bulk last-day "extended" feed (one HTTP call per
 exchange) which carries, per symbol, the name/type and market cap in the exchange's
 local currency. We convert market cap to USD via the FOREX endpoint, keep only common
-stocks in the small-cap band ($300M–$10B), and upsert into `assets` keyed by the full
-EODHD ticker (e.g. "LVMH.PA"). The symbol list is snapshotted to `app_state['universe']`.
+stocks in the small/mid-cap band ($10M–$10B), filter out Euronext Access (ML) tickers,
+and upsert into `assets` keyed by the full EODHD ticker (e.g. "LVMH.PA").
 
-This is also the metadata source (name / market_cap_usd / exchange); the per-symbol
-/fundamentals endpoint is not on the current EODHD tier. A separate sector/industry
-feed is not available here, so those stay null until populated by refresh_sectors.
+Also cleans up any stale US symbols left over from a prior universe build.
 """
 from __future__ import annotations
 
@@ -23,11 +22,15 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-# Market cap filter only. Focus on companies with market cap ≤$10B.
-# No price or volume filters at universe level - those will be applied
-# at the strategy level (momentum, quality, catalyst).
-MIN_MARKET_CAP_USD = 300e6
+# Market cap band: $10M floor catches Euronext Growth companies (typically
+# €10M–€1B). The $10B ceiling excludes mega-caps like LVMH and L'Oréal.
+MIN_MARKET_CAP_USD = 10e6
 MAX_MARKET_CAP_USD = 10e9
+
+# Ticker prefixes for Euronext segments on the PA exchange.
+# AL* = Euronext Growth (formerly Alternext) — include.
+# ML* = Euronext Access / Access+ (formerly Marché Libre) — exclude for now.
+_EXCLUDE_PREFIXES = ("ML",)
 
 
 def _market_cap_usd(raw_cap, fx: float) -> float | None:
@@ -36,10 +39,18 @@ def _market_cap_usd(raw_cap, fx: float) -> float | None:
     return float(raw_cap) * fx
 
 
+def _cleanup_us_symbols() -> int:
+    """Delete stale US-tagged symbols from assets + bars."""
+    counts = storage.cleanup_symbols_by_exchange("US")
+    if counts["assets"] or counts["bars"]:
+        log.info("cleaned up US symbols: %d assets, %d bar rows", counts["assets"], counts["bars"])
+    return counts["assets"]
+
+
 def run() -> int:
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
-    seen_isins: set[str] = set()  # dedup the same company across exchanges
+    seen_isins: set[str] = set()
 
     for exchange in eodhd_client.EXCHANGES:
         currency = eodhd_client.exchange_currency(exchange)
@@ -48,22 +59,26 @@ def run() -> int:
             log.warning("no FX rate for %s (%s); skipping exchange", exchange, currency)
             continue
 
-        # Native common stocks only (filters foreign cross-listings like
-        # 0RA9.LSE). carries name/isin/currency, which the bulk feed lacks.
         native = eodhd_client.native_symbol_meta(exchange)
         raw = eodhd_client.fetch_bulk_extended(exchange)
         kept = 0
+        excluded_ml = 0
         for r in raw:
             code = r.get("code") or r.get("Code")
             if not code or code not in native:
                 continue
-            # Skip class-suffixed / preferred-style tickers (e.g. "BRK-A").
+            # Skip class-suffixed / preferred-style tickers.
             if "/" in code or "." in code:
+                continue
+
+            # Exclude Euronext Access (ML-prefix) tickers.
+            if any(code.startswith(p) for p in _EXCLUDE_PREFIXES):
+                excluded_ml += 1
                 continue
 
             isin = native[code].get("isin")
             if isin and isin in seen_isins:
-                continue  # already kept this company on a prior exchange
+                continue
 
             cap_usd = _market_cap_usd(
                 r.get("MarketCapitalization") or r.get("market_capitalization"), fx
@@ -76,7 +91,6 @@ def run() -> int:
             rows.append(
                 {
                     "symbol": f"{code}.{exchange}",
-                    # Prefer the symbol-list name; bulk name can be terse.
                     "name": native[code].get("name") or r.get("name") or r.get("Name"),
                     "exchange": exchange,
                     "sector": None,
@@ -86,14 +100,17 @@ def run() -> int:
                 }
             )
             kept += 1
-        log.info("%s: %d native commons, %d bulk rows -> %d small-cap (fx %s=%.4f)",
-                 exchange, len(native), len(raw), kept, currency, fx)
+        log.info("%s: %d native commons, %d bulk rows -> %d kept, %d ML excluded (fx %s=%.4f)",
+                 exchange, len(native), len(raw), kept, excluded_ml, currency, fx)
 
-    # Exclude symbols with active risk flags (reverse splits, delisting risk, etc.)
+    # Exclude symbols with active risk flags.
     risk_flagged = storage.symbols_with_active_risk_flags()
     if risk_flagged:
         log.info("excluding %d risk-flagged symbols from universe", len(risk_flagged))
         rows = [r for r in rows if r["symbol"] not in risk_flagged]
+
+    # Clean up stale US symbols from a prior universe build.
+    _cleanup_us_symbols()
 
     n = storage.upsert_assets(rows)
     symbols = sorted(r["symbol"] for r in rows)
@@ -108,6 +125,5 @@ def run() -> int:
             "refreshed_at": now.isoformat(),
         },
     )
-    log.info("universe: %d small-cap common stocks across %d exchanges",
-             len(symbols), len(eodhd_client.EXCHANGES))
+    log.info("universe: %d stocks across %d exchanges", len(symbols), len(eodhd_client.EXCHANGES))
     return n

@@ -1345,3 +1345,21 @@ def load_unexplained_step_changes(tier: str = "major", limit: int = 250) -> list
             [limit],
         )
         return cur.fetchall()
+
+
+# ---------------------------------------------------------------------------
+# maintenance
+# ---------------------------------------------------------------------------
+
+def cleanup_symbols_by_exchange(exchange: str) -> dict[str, int]:
+    """Delete all rows for symbols ending in `.{exchange}` from assets
+    (cascades to tables with FK) and from bars (no FK cascade).
+    Returns counts of deleted rows per table."""
+    pattern = f"%.{exchange}"
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.execute("DELETE FROM bars WHERE symbol LIKE %s", [pattern])
+            bars_deleted = cur.rowcount
+            cur.execute("DELETE FROM assets WHERE symbol LIKE %s", [pattern])
+            assets_deleted = cur.rowcount
+    return {"assets": assets_deleted, "bars": bars_deleted}
