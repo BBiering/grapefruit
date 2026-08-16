@@ -1,5 +1,5 @@
 import type { CompanyCard } from "../types";
-import { formatPrice, formatMoney, formatScore } from "../utils";
+import { formatPrice, formatMoney } from "../utils";
 import { StrategyBadge } from "./StrategyBadge";
 
 interface StatsGridProps {
@@ -20,8 +20,6 @@ export function StatsGrid({ company }: StatsGridProps) {
     <div className="stats-grid">
       <Stat label="Current Price" value={formatPrice(company.last_close)} />
       <Stat label="Market Cap" value={formatMoney(company.market_cap_usd)} />
-      <Stat label="Quality Score" value={formatScore(company.quality_score)} />
-      <Stat label="Combined Score" value={formatScore(company.combined_score)} accent />
       <Stat label="Sector" value={company.sector} />
       <Stat label="Industry" value={company.industry} />
       {company.strategy_tag && (

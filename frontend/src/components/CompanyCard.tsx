@@ -1,6 +1,5 @@
 import type { CompanyCard as CompanyCardType } from "../types";
 import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
-import { QualityBadge } from "./QualityBadge";
 import { StrategyBadge } from "./StrategyBadge";
 import { MiniChart } from "./MiniChart";
 
@@ -29,9 +28,6 @@ export function CompanyCard({ company, onClick }: CompanyCardProps) {
       <div className="card-price">
         {formatPrice(company.last_close)} / {formatMoney(company.market_cap_usd)}
       </div>
-
-      {/* Quality Score + Badge */}
-      <QualityBadge score={company.quality_score} />
 
       {/* Strategy Badge */}
       {company.strategy_tag && (

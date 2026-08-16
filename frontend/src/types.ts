@@ -79,12 +79,8 @@ export interface CompanyCard {
   last_close: number;
   market_cap_usd?: number;
 
-  // Quality
-  quality_score: number;
-
   // Strategy
   strategy_tag?: "Buy Manually" | "Watchlist" | "Pass";
-  combined_score?: number;
 
   // Catalyst data
   predicted_catalyst?: PredictedCatalyst;

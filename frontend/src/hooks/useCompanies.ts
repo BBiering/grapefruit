@@ -3,17 +3,12 @@ import { supabase } from "../supabase";
 import type { CompanyCard } from "../types";
 
 // Active exchanges (must match EODHD's EXCHANGES list in the backend).
-// Symbols with exchanges outside this list are excluded — they're stale data
-// from a previous universe build and don't have fresh metrics or bars.
 const ACTIVE_EXCHANGES = ["PA"];
 
 async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
-  // Build a filter that matches symbols ending in ".PA" (or any active exchange).
-  // Supabase JS doesn't support OR on `like`, so we use `or()` syntax.
   const exchangeFilter = ACTIVE_EXCHANGES.map(ex => `symbol.ilike.*.${ex}`).join(",");
 
-  // Query assets first (filtered to active exchanges) so we don't pull stale
-  // US or other-exchange symbols left over from a prior universe build.
+  // Query assets filtered to active exchanges.
   const { data: assetsData, error: assetsError } = await supabase
     .from("assets")
     .select("symbol, name, exchange, sector, industry, market_cap_usd")
@@ -25,37 +20,38 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 
   const activeSymbols = assetsData.map(a => a.symbol);
 
-  // Now get company_metrics only for our active-exchange symbols.
-  const { data: metricsData } = await supabase
-    .from("company_metrics")
-    .select("symbol, quality_score, insider_score, net_income, profit_margin")
-    .in("symbol", activeSymbols.slice(0, 500));
-
-  const { data: pricesData } = await supabase
-    .from("latest_prices")
-    .select("symbol, last_close")
-    .in("symbol", activeSymbols.slice(0, 500));
+  // Get latest close from bars for each symbol. Fetch recent rows ordered
+  // by date descending, then dedup client-side (first per symbol = latest).
+  // Use a high limit since .in() + .order() returns rows across all symbols.
+  const { data: barsData } = await supabase
+    .from("bars")
+    .select("symbol, close")
+    .in("symbol", activeSymbols.slice(0, 500))
+    .order("ts", { ascending: false })
+    .limit(5000);
 
   const latestPrices = new Map<string, number>();
-  if (pricesData) {
-    for (const row of pricesData) {
-      latestPrices.set(row.symbol, row.last_close || 0);
+  if (barsData) {
+    for (const row of barsData) {
+      if (!latestPrices.has(row.symbol)) {
+        latestPrices.set(row.symbol, row.close || 0);
+      }
     }
   }
 
-  const metricsSymbols = metricsData ? metricsData.map(m => m.symbol) : [];
-
+  // Fetch catalysts for all active symbols.
   const { data: catalystData } = await supabase
     .from("predicted_catalysts")
     .select("symbol, detected, event_name, impact_type, expected_window, strategic_summary, source_url, model, scanned_at, tier, tier_name, event_date, confidence_score")
     .eq("detected", true)
-    .in("symbol", metricsSymbols.slice(0, 1000))
+    .in("symbol", activeSymbols.slice(0, 1000))
     .limit(500);
 
   const catalystsMap = new Map(
     (catalystData || []).map(c => [c.symbol, c])
   );
 
+  // Prioritize symbols with catalysts, then fill with remaining.
   const symbolsToFetch = [
     ...Array.from(catalystsMap.keys()),
     ...activeSymbols.filter(s => !catalystsMap.has(s)),
@@ -89,9 +85,6 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
     }
   }
 
-  const metricsMap = new Map((metricsData || []).map(m => [m.symbol, m]));
-
-  // Build a lookup for the already-fetched assets data.
   const assetsMap = new Map(assetsData.map(a => [a.symbol, a]));
 
   const companies: CompanyCard[] = [];
@@ -99,8 +92,6 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   for (const symbol of symbolsToFetch) {
     const row = assetsMap.get(symbol);
     if (!row) continue;
-    const metrics = metricsMap.get(row.symbol);
-    if (!metrics) continue;
 
     const catalyst = catalystsMap.get(row.symbol) || null;
     const recentStepChange = recentStepChanges.get(row.symbol) || null;
@@ -121,7 +112,6 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
       industry: row.industry || "Unknown",
       last_close: lastClose,
       market_cap_usd: row.market_cap_usd ?? undefined,
-      quality_score: metrics?.quality_score ?? 50,
       predicted_catalyst: catalyst ?? undefined,
       recent_step_change: recentStepChange ?? undefined,
       upcoming_events: [],

@@ -97,8 +97,8 @@ export function Dashboard() {
 
           if (dateA !== dateB) return dateA.localeCompare(dateB);
 
-          // If same date, sort by quality (highest first)
-          return b.quality_score - a.quality_score;
+          // If same date, sort by market cap (largest first)
+          return (b.market_cap_usd || 0) - (a.market_cap_usd || 0);
 
         case "price":
           return b.last_close - a.last_close;
