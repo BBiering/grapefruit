@@ -1,13 +1,13 @@
-"""Perplexity-backed catalyst explanations for big stock moves.
+"""Perplexity-backed catalyst analysis.
 
-For each hit we cache:
-- the overall trough->peak catalyst,
-- the sharpest single-session jump inside the window (recomputed per call),
-- whether that jump was foreseeable from public information beforehand,
-- and the pre-existing signal, if any.
+Two-step flow (Perplexity Search API + Sonar chat):
+1. `/search` returns ranked web results as structured JSON (title, url,
+   snippet, date) — cheap, per-request pricing, no token charges.
+2. A Sonar chat completion extracts a structured catalyst report from those
+   results, so `source_url` is grounded in real results, not hallucinated.
 
-Persistence is in the `catalysts` Postgres table via grapefruit.storage. No
-disk caches.
+Also provides `explain_move` for past step changes (kept on chat completions
+since it reasons about known price data rather than needing fresh retrieval).
 """
 from __future__ import annotations
 
@@ -25,203 +25,137 @@ from grapefruit.rate_limit import PERPLEXITY_BUCKET, redact
 
 log = logging.getLogger(__name__)
 
-_PPLX_URL = "https://api.perplexity.ai/chat/completions"
+_SONAR_URL = "https://api.perplexity.ai/chat/completions"
+_SEARCH_URL = "https://api.perplexity.ai/search"
 _MODEL = "sonar"
-_FORWARD_MODEL = "sonar-pro"  # stronger web reasoning for the look-ahead scan
+_FORWARD_MODEL = "sonar-pro"  # stronger web reasoning for catalyst extraction
 _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 
-# Lazy import perplexity SDK (only for Agent API calls)
-_perplexity_client = None
+
+def web_search(
+    query: str,
+    max_results: int = 8,
+    country: str | None = None,
+) -> list[dict]:
+    """Step 1: Perplexity Search API — ranked web results as structured JSON.
+
+    Returns a list of {title, url, snippet, date, last_updated}. Empty list on
+    any failure. Billed per request (no token charges).
+    """
+    if not settings.perplexity_api_key:
+        return []
+    payload: dict = {"query": query, "max_results": max_results}
+    if country:
+        payload["country"] = country
+    headers = {
+        "Authorization": f"Bearer {settings.perplexity_api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = _post_search(headers, payload)
+        if resp is None:
+            return []
+        data = resp.json()
+        return data.get("results", []) if isinstance(data, dict) else []
+    except Exception as exc:  # noqa: BLE001
+        log.warning("perplexity search failed: %s", redact(str(exc)))
+        return []
 
 
-def _get_perplexity_client():
-    global _perplexity_client
-    if _perplexity_client is None:
-        try:
-            from perplexity import Perplexity
-            _perplexity_client = Perplexity(api_key=settings.perplexity_api_key)
-        except ImportError:
-            log.warning("perplexity SDK not installed; falling back to httpx")
-            _perplexity_client = False  # sentinel
-    return _perplexity_client if _perplexity_client is not False else None
+def scan_catalyst(
+    symbol: str,
+    name: str | None = None,
+    price: float | None = None,
+    sector: str | None = None,
+) -> dict:
+    """Two-step future-catalyst scan for a single symbol.
 
+    1. Search the web for upcoming scheduled events (next ~3 months).
+    2. Ask sonar-pro to extract a structured report from the search results.
 
-def forward_catalyst(symbol: str, name: str | None, price: float | None) -> dict:
-    """Scan the live web for an IMMINENT (next 1–90 days) forward-looking catalyst
-    for `symbol`, using Perplexity Agent API with finance_search, web_search, and
-    fetch_url tools. Falls back to chat completion if Agent API unavailable.
-
-    Returns {detected, event_name, impact_type, expected_window, strategic_summary,
-    source_url, model, error?}. Never raises — errors are returned in `error`.
+    Returns {detected, event_name, event_date, impact_type, expected_impact_pct,
+    confidence, strategic_summary, source_url, error?}. Never raises.
     """
     base = {
-        "symbol": symbol,
         "detected": False,
         "event_name": None,
+        "event_date": None,
         "impact_type": None,
-        "expected_window": None,
+        "expected_impact_pct": None,
+        "confidence": None,
         "strategic_summary": None,
         "source_url": None,
-        "model": _FORWARD_MODEL,
     }
     if not settings.perplexity_api_key:
         return {**base, "error": "no_key"}
 
     label = f"{symbol} ({name})" if name else symbol
     price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
+    sector_str = sector or "Unknown"
 
-    # Try Agent API first (preferred for finance_search access)
-    client = _get_perplexity_client()
-    if client:
-        return _forward_catalyst_agent_api(client, base, label, price_str, symbol)
+    # --- Step 1: retrieve evidence -------------------------------------------------
+    query = (
+        f"{label} upcoming catalyst events scheduled next 3 months: "
+        f"FDA/EMA decisions, clinical trial readouts, earnings dates, spin-offs. "
+        f"Sector: {sector_str}, price ~{price_str}."
+    )
+    results = web_search(query, max_results=8, country="FR")
+    if not results:
+        return {**base, "error": "no_search_results"}
 
-    # Fallback to chat completion API
-    return _forward_catalyst_chat_api(base, label, price_str, symbol)
+    # --- Step 2: extract structured report from results ---------------------------
+    context = "\n".join(
+        f"[{i + 1}] {r.get('title', '')} ({r.get('date', 'unknown date')})\n"
+        f"    URL: {r.get('url', '')}\n"
+        f"    {r.get('snippet', '')[:400]}"
+        for i, r in enumerate(results)
+    )
 
-
-def _forward_catalyst_agent_api(client, base: dict, label: str, price_str: str, symbol: str) -> dict:
-    """Use Perplexity Agent API (Responses API) with finance_search tools."""
     user_msg = (
-        "You are an institutional research analyst hunting for forward-looking, high-impact stock catalysts. "
-        f"Analyze live data for ticker '{label}' (price ~{price_str}).\n\n"
-        "Identify a SCHEDULED or highly anticipated FUTURE event in the next 1–90 days that could cause "
-        "a large structural re-pricing (Phase 2/3 readouts, FDA PDUFA dates, scheduled spin-offs, earnings "
-        "with expected guidance shifts, pending regulatory approvals, major contract decisions). "
-        "Ignore old news unless it sets up an imminent future event.\n\n"
+        "You are an institutional research analyst. Based ONLY on the web search "
+        "results below, identify SPECIFIC upcoming catalyst events in the next "
+        "3 months for the European stock "
+        f"'{label}' (sector: {sector_str}, price ~{price_str}).\n\n"
+        "Focus on scheduled events with a date or narrow window: FDA/EMA decisions, "
+        "clinical trial readouts, earnings dates, spin-offs, major contract decisions. "
+        "Ignore historical news.\n\n"
+        "Search results:\n"
+        f"{context}\n\n"
         "Return a JSON object with exactly these keys:\n"
         "{\n"
-        '  "imminent_future_catalyst_detected": true or false,\n'
-        '  "catalyst_event_name": "name of the specific future event, or empty",\n'
-        '  "expected_date_window": "YYYY-MM-DD or a short timeframe, or empty",\n'
-        '  "catalyst_impact_type": "Binary FDA | Earnings | Spin-off | Contract | Regulatory | Other",\n'
-        '  "strategic_summary": "1-2 sentences on exactly what is dropping and why it could reprice the stock",\n'
-        '  "verified_source_url": "the exact live URL referencing this upcoming event, or empty"\n'
+        '  "catalyst_detected": true or false,\n'
+        '  "event_name": "specific event name or empty string",\n'
+        '  "event_date": "YYYY-MM-DD or empty if not known",\n'
+        '  "impact_type": "Earnings | Regulatory | Clinical Trial | Spin-off | Contract | Other",\n'
+        '  "expected_impact_pct": number (estimated price change %, e.g. 15.0 for +15%),\n'
+        '  "confidence": "high" | "medium" | "low",\n'
+        '  "strategic_summary": "1-2 sentences on the catalyst and potential impact",\n'
+        '  "source_url": "the URL from the search results that supports this -- must be one of the URLs above"\n'
         "}"
     )
 
-    instructions = (
-        "You have access to finance_search, web_search, and fetch_url. "
-        "Use finance_search first for any ticker-specific data (prices, filings, estimates, transcripts, earnings dates). "
-        "Use web_search for catalyst calendars, trial registries, FDA calendars, and corporate IR pages. "
-        "Use fetch_url to pull full 8-Ks, press releases, or clinical trial protocol pages when needed. "
-        "Always verify the event is future-dated and scheduled, not historical. "
-        "Return ONLY the JSON object, no surrounding text."
-    )
+    parsed = _query_json(user_msg)
+    if not parsed:
+        return {**base, "error": "unparseable"}
 
-    try:
-        PERPLEXITY_BUCKET.acquire()
-        # Agent API uses preset names, not model names
-        # "pro-search" is the strongest preset with finance_search access
-        response = client.responses.create(
-            preset="pro-search",
-            input=user_msg,
-            tools=[
-                {"type": "finance_search"},
-                {"type": "web_search"},
-                {"type": "fetch_url"},
-            ],
-            instructions=instructions,
-        )
+    detected = bool(parsed.get("catalyst_detected"))
+    source_url = (parsed.get("source_url") or "").strip() or None
+    # Only accept a source URL that actually came from search results.
+    known_urls = {r.get("url") for r in results}
+    if source_url and source_url not in known_urls:
+        source_url = None
 
-        # Extract content from Agent API response
-        # Response.output is a list; the last message item contains the text response
-        raw = ""
-        if hasattr(response, "output") and response.output:
-            for item in response.output:
-                if hasattr(item, "type") and item.type == "message":
-                    if hasattr(item, "content") and item.content:
-                        for part in item.content:
-                            if hasattr(part, "text"):
-                                raw += part.text
-
-        if not raw:
-            raw = str(response)
-
-        parsed = _parse_json_response(raw)
-        if not parsed:
-            return {**base, "error": "unparseable"}
-
-        return {
-            **base,
-            "detected": bool(parsed.get("imminent_future_catalyst_detected")),
-            "event_name": (parsed.get("catalyst_event_name") or "").strip() or None,
-            "impact_type": (parsed.get("catalyst_impact_type") or "").strip() or None,
-            "expected_window": (parsed.get("expected_date_window") or "").strip() or None,
-            "strategic_summary": (parsed.get("strategic_summary") or "").strip() or None,
-            "source_url": (parsed.get("verified_source_url") or "").strip() or None,
-        }
-    except Exception as exc:  # noqa: BLE001
-        log.warning("perplexity agent API failed for %s: %s", symbol, redact(str(exc)))
-        return {**base, "error": f"agent_api_failed: {type(exc).__name__}"}
-
-
-def _forward_catalyst_chat_api(base: dict, label: str, price_str: str, symbol: str) -> dict:
-    """Fallback to chat completion API (no finance_search tools)."""
-    user_msg = (
-        "You are an institutional research analyst hunting for forward-looking, "
-        "high-impact stock catalysts for European companies. Analyze the live web, "
-        "European regulatory filings (annual reports, half-year reports, ad-hoc "
-        "disclosures per MAR regulation), exchange announcements (RNS for LSE, DGAP "
-        "for XETRA, AMF for Euronext), corporate calendars, and bio/tech registries "
-        f"for the ticker '{label}' (currently around {price_str}).\n\n"
-        "Identify a SCHEDULED or highly anticipated FUTURE event in the next 1 to "
-        "90 days that could cause a large structural re-pricing (e.g. Phase 2/3 "
-        "trial data readouts, EMA CHMP opinion dates, scheduled demergers, "
-        "earnings dates with expected guidance changes, pending regulatory "
-        "approvals, or major contract decisions). Ignore old news unless it sets "
-        "up an imminent future event.\n\n"
-        "Return a JSON object with exactly these keys:\n"
-        "{\n"
-        '  "imminent_future_catalyst_detected": true or false,\n'
-        '  "catalyst_event_name": "name of the specific future event, or empty",\n'
-        '  "expected_date_window": "YYYY-MM-DD or a short timeframe, or empty",\n'
-        '  "catalyst_impact_type": "Binary FDA | Earnings | Spin-off | Contract | Regulatory | Other",\n'
-        '  "strategic_summary": "1-2 sentences on exactly what is dropping and why it could reprice the stock",\n'
-        '  "verified_source_url": "the exact live URL referencing this upcoming event, or empty"\n'
-        "}"
-    )
-    payload = {
-        "model": _FORWARD_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a precise financial data extraction engine. You speak "
-                    "exclusively in structured JSON objects."
-                ),
-            },
-            {"role": "user", "content": user_msg},
-        ],
-        "temperature": 0.2,
+    return {
+        "detected": detected,
+        "event_name": (parsed.get("event_name") or "").strip() or None,
+        "event_date": (parsed.get("event_date") or "").strip() or None,
+        "impact_type": (parsed.get("impact_type") or "").strip() or None,
+        "expected_impact_pct": parsed.get("expected_impact_pct"),
+        "confidence": (parsed.get("confidence") or "").strip().lower() or None,
+        "strategic_summary": (parsed.get("strategic_summary") or "").strip() or None,
+        "source_url": source_url,
     }
-    headers = {
-        "Authorization": f"Bearer {settings.perplexity_api_key}",
-        "Content-Type": "application/json",
-    }
-    try:
-        resp = _post_with_retry(headers, payload, symbol)
-        if resp is None:
-            return {**base, "error": "rate_limited"}
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
-        parsed = _parse_json_response(raw)
-        if not parsed:
-            return {**base, "error": "unparseable"}
-        return {
-            **base,
-            "detected": bool(parsed.get("imminent_future_catalyst_detected")),
-            "event_name": (parsed.get("catalyst_event_name") or "").strip() or None,
-            "impact_type": (parsed.get("catalyst_impact_type") or "").strip() or None,
-            "expected_window": (parsed.get("expected_date_window") or "").strip() or None,
-            "strategic_summary": (parsed.get("strategic_summary") or "").strip() or None,
-            "source_url": (parsed.get("verified_source_url") or "").strip() or None,
-        }
-    except httpx.HTTPStatusError as exc:
-        log.warning("perplexity forward %s returned %s", symbol, exc.response.status_code)
-        return {**base, "error": f"http_{exc.response.status_code}"}
-    except Exception as exc:  # noqa: BLE001
-        log.warning("perplexity forward fetch failed for %s: %s", symbol, redact(str(exc)))
-        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
 
 
 def explain_move(
@@ -234,9 +168,11 @@ def explain_move(
     spike: dict | None = None,
     refresh: bool = False,
 ) -> dict:
-    """Return a structured catalyst report. Pure function — caller is responsible
-    for caching/persistence (e.g. into `winner_catalysts`). The `refresh` arg is
-    retained for API compatibility but ignored."""
+    """Explain a past 5x+ step change with a structured catalyst report.
+
+    Reasons about known price data (no retrieval needed), so it stays on the
+    regular chat-completions endpoint. Pure function — the caller persists.
+    """
     del refresh  # caching is handled by callers now
 
     base = {
@@ -314,7 +250,7 @@ def explain_move(
     }
 
     try:
-        resp = _post_with_retry(headers, payload, symbol)
+        resp = _post_with_retry(_SONAR_URL, headers, payload, symbol)
         if resp is None:
             return {**base, "error": "rate_limited"}
         data = resp.json()
@@ -347,10 +283,85 @@ def explain_move(
         return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
 
 
-def _post_with_retry(headers: dict, payload: dict, symbol: str) -> httpx.Response | None:
+# ---------------------------------------------------------------------------
+# low-level HTTP helpers
+# ---------------------------------------------------------------------------
+
+def _query_json(user_msg: str, model: str = _FORWARD_MODEL) -> dict:
+    """Single sonar chat call that returns the parsed JSON from the answer."""
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise financial data extraction engine. Return ONLY "
+                    "the JSON object matching the user's schema; no prose or fences."
+                ),
+            },
+            {"role": "user", "content": user_msg},
+        ],
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.perplexity_api_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        resp = _post_with_retry(_SONAR_URL, headers, payload, "extract")
+        if resp is None:
+            return {}
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        return _parse_json_response(raw)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("perplexity extraction failed: %s", redact(str(exc)))
+        return {}
+
+
+def _post_search(headers: dict, payload: dict) -> httpx.Response | None:
+    """POST /search with 429/5xx retry honoring Retry-After."""
     for attempt in range(_MAX_RETRIES):
         PERPLEXITY_BUCKET.acquire()
-        resp = httpx.post(_PPLX_URL, headers=headers, json=payload, timeout=45.0)
+        try:
+            resp = httpx.post(_SEARCH_URL, headers=headers, json=payload, timeout=45.0)
+        except Exception as exc:  # noqa: BLE001
+            if attempt + 1 >= _MAX_RETRIES:
+                log.warning("perplexity search request failed: %s", redact(str(exc)))
+                return None
+            time.sleep(2 ** attempt)
+            continue
+        if resp.status_code == 429:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            log.warning(
+                "perplexity search 429; sleeping %.1fs (attempt %d/%d)",
+                retry_after, attempt + 1, _MAX_RETRIES,
+            )
+            time.sleep(retry_after)
+            continue
+        if resp.status_code >= 500:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            if attempt + 1 < _MAX_RETRIES:
+                log.warning(
+                    "perplexity search %d; sleeping %.1fs (attempt %d/%d)",
+                    resp.status_code, retry_after, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(retry_after)
+                continue
+        if resp.status_code >= 400:
+            log.warning(
+                "perplexity search %d: %s",
+                resp.status_code, redact(resp.text[:300]),
+            )
+            return None
+        return resp
+    return None
+
+
+def _post_with_retry(url: str, headers: dict, payload: dict, symbol: str) -> httpx.Response | None:
+    """POST chat completions with 429/5xx retry honoring Retry-After."""
+    for attempt in range(_MAX_RETRIES):
+        PERPLEXITY_BUCKET.acquire()
+        resp = httpx.post(url, headers=headers, json=payload, timeout=45.0)
         if resp.status_code == 429:
             retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
             log.warning(
@@ -359,9 +370,18 @@ def _post_with_retry(headers: dict, payload: dict, symbol: str) -> httpx.Respons
             )
             time.sleep(retry_after)
             continue
+        if resp.status_code >= 500:
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            if attempt + 1 < _MAX_RETRIES:
+                log.warning(
+                    "perplexity %d for %s; sleeping %.1fs (attempt %d/%d)",
+                    resp.status_code, symbol, retry_after, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(retry_after)
+                continue
         resp.raise_for_status()
         return resp
-    log.warning("perplexity gave up on %s after %d 429s", symbol, _MAX_RETRIES)
+    log.warning("perplexity gave up on %s after %d retries", symbol, _MAX_RETRIES)
     return None
 
 
@@ -392,200 +412,4 @@ def _parse_json_response(text: str) -> dict:
         obj = json.loads(candidate)
         return obj if isinstance(obj, dict) else {}
     except json.JSONDecodeError:
-        return {}
-
-
-# ============================================================================
-# Tier-specific catalyst detection functions
-# ============================================================================
-
-
-def tier1_biotech_catalyst(symbol: str, name: str | None = None, price: float | None = None) -> dict:
-    """Tier 1: Hunt for FDA PDUFA dates, AdCom votes, Phase 2b/3 readouts (biotech)."""
-    label = f"{symbol} ({name or 'N/A'})"
-    price_str = f"${price:.2f}" if price else "unknown"
-
-    user_msg = (
-        f"You are hunting for binary EMA and clinical trial catalysts for European biotech/pharma ticker '{label}' (price ~{price_str}).\n\n"
-        "TIER 1 CATALYSTS TO DETECT (highest priority):\n"
-        "1. EMA CHMP opinion dates - Committee for Medicinal Products for Human Use decision\n"
-        "2. EMA CHMP meeting agendas - advisory committee review dates\n"
-        "3. Phase 2b or Phase 3 topline data readout dates - final trial results unlock\n"
-        "4. Marketing Authorization Application (MAA) submission with expected CHMP timeline\n\n"
-        "Search:\n"
-        "- EMA CHMP meeting calendars and opinion dates\n"
-        "- EU Clinical Trials Register (clinicaltrialsregister.eu) for trial completion timelines\n"
-        "- Company IR pages for trial milestone guidance\n"
-        "- European biotech databases and news\n"
-        "- Company RNS/DGAP/AMF announcements on regulatory milestones\n\n"
-        "Return JSON:\n"
-        "{\n"
-        '  "tier1_catalyst_detected": true/false,\n'
-        '  "event_name": "specific event name",\n'
-        '  "event_type": "FDA PDUFA" | "FDA AdCom" | "Phase 3 Readout" | "Phase 2b Readout",\n'
-        '  "event_date": "YYYY-MM-DD or empty if vague",\n'
-        '  "expected_window": "Q2 2026" if no exact date,\n'
-        '  "confidence": 0.0-1.0 (1.0 = official filing, 0.6 = management guidance),\n'
-        '  "strategic_summary": "1-2 sentences on what\'s being decided and potential impact",\n'
-        '  "source_url": "exact URL of official source"\n'
-        "}\n\n"
-        "Only return detected=true if there's a scheduled or highly anticipated event in next 1-180 days."
-    )
-
-    instructions = (
-        "Use finance_search first for any ticker-specific data (prices, filings, estimates, transcripts). "
-        "Use web_search for FDA calendars, ClinicalTrials.gov, biotech databases, and company IR pages. "
-        "Use fetch_url to pull full 8-Ks, press releases, or clinical trial protocol pages when needed. "
-        "Always verify the event is future-dated and scheduled, not historical."
-    )
-
-    base = {
-        "symbol": symbol,
-        "detected": False,
-        "event_name": None,
-        "impact_type": None,
-        "expected_window": None,
-        "strategic_summary": None,
-        "source_url": None,
-        "model": _FORWARD_MODEL,
-        "tier": 1,
-        "tier_name": "Systemic Volatility",
-        "confidence_score": None,
-        "sector_targeted": True,
-    }
-
-    label = f"{symbol} ({name})" if name else symbol
-    price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
-
-    try:
-        client = _get_perplexity_client()
-        if client:
-            result = _forward_catalyst_agent_api(client, base, label, price_str, symbol)
-        else:
-            result = _forward_catalyst_chat_api(base, label, price_str, symbol)
-
-        # result is already a complete dict from the API functions
-        # Just add tier-specific metadata
-        return {
-            **result,
-            "tier": base["tier"],
-            "tier_name": base["tier_name"],
-            "sector_targeted": base["sector_targeted"],
-        }
-    except Exception as exc:  # noqa: BLE001
-        log.warning("tier1 biotech catalyst failed for %s: %s", symbol, redact(str(exc)))
-        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
-
-
-def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | None = None) -> dict:
-    """Tier 1: Hunt for corporate spin-offs and carve-outs."""
-    label = f"{symbol} ({name or 'N/A'})"
-    price_str = f"${price:.2f}" if price else "unknown"
-
-    user_msg = (
-        f"Search for corporate spin-off or carve-out activity for ticker '{label}' (price ~{price_str}).\n\n"
-        "TIER 1 SPIN-OFF CATALYSTS:\n"
-        "- Announced spin-offs with ex-date scheduled\n"
-        "- Business unit carve-outs creating new publicly traded entities\n"
-        "- Reverse Morris Trust transactions\n\n"
-        "Search:\n"
-        "- Prospectus filings for the spun-off entity (e.g., BaFin, FCA, AMF)\n"
-        "- Company demerger announcements via exchange notices (RNS, DGAP, AMF)\n"
-        "- Investor presentations mentioning strategic separation\n"
-        "- Annual reports and shareholder meeting materials describing the spin-off\n\n"
-        "Return JSON:\n"
-        "{\n"
-        '  "spinoff_detected": true/false,\n'
-        '  "event_name": "specific spin-off name",\n'
-        '  "event_date": "YYYY-MM-DD distribution date or empty",\n'
-        '  "expected_window": "Q3 2026" if no exact date,\n'
-        '  "confidence": 0.0-1.0,\n'
-        '  "strategic_summary": "what entity is being spun off and why it\'s undervalued",\n'
-        '  "source_url": "SEC filing or official announcement"\n'
-        "}\n\n"
-        "Only return detected=true if spin-off is officially announced and scheduled within 180 days."
-    )
-
-    instructions = (
-        "Use finance_search for SEC filings and investor presentations. "
-        "Use web_search for spin-off announcements and proxy statements. "
-        "Use fetch_url to pull full Form 10-12B/A or 8-K filings. "
-        "Verify the spin-off is officially announced, not just rumored."
-    )
-
-    base = {
-        "symbol": symbol,
-        "detected": False,
-        "event_name": None,
-        "impact_type": "Spin-off",
-        "expected_window": None,
-        "strategic_summary": None,
-        "source_url": None,
-        "model": _FORWARD_MODEL,
-        "tier": 1,
-        "tier_name": "Systemic Volatility",
-        "confidence_score": None,
-        "sector_targeted": False,
-    }
-
-    label = f"{symbol} ({name})" if name else symbol
-    price_str = f"${price:.2f}" if isinstance(price, (int, float)) else "unknown"
-
-    try:
-        client = _get_perplexity_client()
-        if client:
-            result = _forward_catalyst_agent_api(client, base, label, price_str, symbol)
-        else:
-            result = _forward_catalyst_chat_api(base, label, price_str, symbol)
-
-        # result is already a complete dict from the API functions
-        # Just add tier-specific metadata
-        return {
-            **result,
-            "tier": base["tier"],
-            "tier_name": base["tier_name"],
-            "sector_targeted": base["sector_targeted"],
-        }
-    except Exception as exc:  # noqa: BLE001
-        log.warning("tier1 spinoff catalyst failed for %s: %s", symbol, redact(str(exc)))
-        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
-
-
-def query_perplexity(prompt: str) -> dict:
-    """Send a generic prompt to Perplexity and return the parsed JSON response.
-
-    Used by scan_catalysts for the unified forward-looking scan. Returns an
-    empty dict on any failure (network, rate limit, unparseable response).
-    """
-    if not settings.perplexity_api_key:
-        return {}
-
-    payload = {
-        "model": _FORWARD_MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a precise financial data extraction engine. "
-                    "Return ONLY the JSON object matching the user's schema; "
-                    "no surrounding prose or fences."
-                ),
-            },
-            {"role": "user", "content": prompt},
-        ],
-        "temperature": 0.2,
-    }
-    headers = {
-        "Authorization": f"Bearer {settings.perplexity_api_key}",
-        "Content-Type": "application/json",
-    }
-
-    try:
-        resp = _post_with_retry(headers, payload, "scan")
-        if resp is None:
-            return {}
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
-        return _parse_json_response(raw)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("query_perplexity failed: %s", redact(str(exc)))
         return {}
