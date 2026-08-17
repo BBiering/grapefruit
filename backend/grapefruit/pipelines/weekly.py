@@ -9,19 +9,12 @@ from __future__ import annotations
 import logging
 
 from grapefruit.pipelines import (
-    compute_strategy_tags,
-    detect_step_changes,           # Find step changes (1.5x+, all tiers)
-    enrich_catalysts,              # Explain step changes with Perplexity
+    detect_step_changes,
+    enrich_catalysts,
     refresh_bars,
-    refresh_company_metrics,       # Universe-wide quality metrics
-    refresh_fundamentals,
     refresh_sectors,
     refresh_universe,
-    scan_tier1_biotech_catalysts,
-    scan_tier1_spinoffs,
-    # scan_tier2_earnings_contracts,  # DISABLED: EODHD earnings calendar is US-only
-    scan_tier3_structural_events,
-    scan_universe_incremental,
+    scan_catalysts,
 )
 
 
@@ -32,36 +25,23 @@ def run() -> int:
     total = 0
     failures: list[str] = []
     for step in (
-        refresh_universe,               # 1. Build universe (with risk flag exclusions)
-        refresh_fundamentals,           # 2. Fetch financials
-        refresh_company_metrics,        # 3. Compute quality metrics for ALL stocks
-        refresh_bars,                   # 4. Fetch price data
-        detect_step_changes,            # 5. Find step changes (1.5x+, all tiers)
-        refresh_sectors,                # 6. Populate sector/industry
-
-        # CATALYST DETECTION PIPELINES (EU-focused)
-        scan_tier3_structural_events,   # 7. Reverse splits + index inclusion
-        # scan_tier2_earnings_contracts DISABLED - earnings calendar is US-only (no EU equivalent)
-        scan_tier1_biotech_catalysts,   # 8. EMA/trials for biotech/pharma
-        scan_tier1_spinoffs,            # 9. Demergers for top 300 market cap
-        scan_universe_incremental,      # 10. Rotate through 250 stocks/week
-
-        enrich_catalysts,               # 11. Explain step changes (250/week budget)
-        compute_strategy_tags,          # 12. Generate strategy metadata
+        refresh_universe,        # 1. Build universe (PA main + Growth)
+        refresh_bars,            # 2. Fetch 3 years of daily prices
+        refresh_sectors,         # 3. Populate sector/industry
+        detect_step_changes,     # 4. Find 5×+ step changes
+        enrich_catalysts,        # 5. Explain past events with Perplexity
+        scan_catalysts,          # 6. Scan upcoming catalysts with Perplexity
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)
         try:
             rows = int(step.run() or 0)
-        except Exception:  # noqa: BLE001 — isolate steps so one failure
-            # doesn't discard the work of the steps that already succeeded.
+        except Exception:
             log.exception("step %s failed; continuing", name)
             failures.append(name)
             continue
         log.info("<== %s: %d rows", name, rows)
         total += rows
     if failures:
-        # Surface a non-zero outcome via the raised error so the run is marked
-        # 'error' in pipeline_runs, but only after every step has had a turn.
         raise RuntimeError(f"weekly completed with failed steps: {', '.join(failures)}")
     return total

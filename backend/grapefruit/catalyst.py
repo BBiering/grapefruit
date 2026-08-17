@@ -549,3 +549,43 @@ def tier1_spinoff_catalyst(symbol: str, name: str | None = None, price: float | 
     except Exception as exc:  # noqa: BLE001
         log.warning("tier1 spinoff catalyst failed for %s: %s", symbol, redact(str(exc)))
         return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
+
+
+def query_perplexity(prompt: str) -> dict:
+    """Send a generic prompt to Perplexity and return the parsed JSON response.
+
+    Used by scan_catalysts for the unified forward-looking scan. Returns an
+    empty dict on any failure (network, rate limit, unparseable response).
+    """
+    if not settings.perplexity_api_key:
+        return {}
+
+    payload = {
+        "model": _FORWARD_MODEL,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    "You are a precise financial data extraction engine. "
+                    "Return ONLY the JSON object matching the user's schema; "
+                    "no surrounding prose or fences."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        "temperature": 0.2,
+    }
+    headers = {
+        "Authorization": f"Bearer {settings.perplexity_api_key}",
+        "Content-Type": "application/json",
+    }
+
+    try:
+        resp = _post_with_retry(headers, payload, "scan")
+        if resp is None:
+            return {}
+        raw = resp.json()["choices"][0]["message"]["content"].strip()
+        return _parse_json_response(raw)
+    except Exception as exc:  # noqa: BLE001
+        log.warning("query_perplexity failed: %s", redact(str(exc)))
+        return {}

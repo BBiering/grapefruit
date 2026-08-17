@@ -156,6 +156,17 @@ def _get(path: str, params: dict | None = None):
             # gated endpoint doesn't abort the whole run.
             log.warning("eodhd 403 on %s (not on current plan); skipping", path)
             return None
+        if resp.status_code >= 500:
+            # Transient server error — retry with backoff.
+            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
+            if attempt + 1 < _MAX_RETRIES:
+                log.warning(
+                    "eodhd %d on %s; sleeping %.1fs (attempt %d/%d)",
+                    resp.status_code, path, retry_after, attempt + 1, _MAX_RETRIES,
+                )
+                time.sleep(retry_after)
+                continue
+            # Last attempt failed — let it fall through to the raise below.
         if resp.status_code >= 400:
             # Never call raise_for_status(): its message embeds the request URL,
             # which contains the api_token. Redact before logging/raising.

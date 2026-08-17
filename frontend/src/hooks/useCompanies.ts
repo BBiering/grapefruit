@@ -1,14 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../supabase";
-import type { CompanyCard } from "../types";
+import type { CompanyCard, PastCatalyst, FutureCatalyst } from "../types";
 
-// Active exchanges (must match EODHD's EXCHANGES list in the backend).
 const ACTIVE_EXCHANGES = ["PA"];
 
-async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
+async function fetchCompanies(): Promise<CompanyCard[]> {
   const exchangeFilter = ACTIVE_EXCHANGES.map(ex => `symbol.ilike.*.${ex}`).join(",");
 
-  // Query assets filtered to active exchanges.
+  // 1. Assets (filtered to active exchanges)
   const { data: assetsData, error: assetsError } = await supabase
     .from("assets")
     .select("symbol, name, exchange, sector, industry, market_cap_usd")
@@ -18,104 +17,107 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
   if (assetsError) throw assetsError;
   if (!assetsData || assetsData.length === 0) return [];
 
-  const activeSymbols = assetsData.map(a => a.symbol);
+  const symbols = assetsData.map(a => a.symbol);
 
-  // Get latest close from bars for each symbol. Fetch recent rows ordered
-  // by date descending, then dedup client-side (first per symbol = latest).
-  // Use a high limit since .in() + .order() returns rows across all symbols.
+  // 2. Latest prices from bars
   const { data: barsData } = await supabase
     .from("bars")
     .select("symbol, close")
-    .in("symbol", activeSymbols.slice(0, 500))
+    .in("symbol", symbols.slice(0, 500))
     .order("ts", { ascending: false })
     .limit(5000);
 
-  const latestPrices = new Map<string, number>();
+  const prices = new Map<string, number>();
   if (barsData) {
     for (const row of barsData) {
-      if (!latestPrices.has(row.symbol)) {
-        latestPrices.set(row.symbol, row.close || 0);
-      }
+      if (!prices.has(row.symbol)) prices.set(row.symbol, row.close || 0);
     }
   }
 
-  // Fetch catalysts for all active symbols.
-  const { data: catalystData } = await supabase
-    .from("predicted_catalysts")
-    .select("symbol, detected, event_name, impact_type, expected_window, strategic_summary, source_url, model, scanned_at, tier, tier_name, event_date, confidence_score")
-    .eq("detected", true)
-    .in("symbol", activeSymbols.slice(0, 1000))
-    .limit(500);
-
-  const catalystsMap = new Map(
-    (catalystData || []).map(c => [c.symbol, c])
-  );
-
-  // Prioritize symbols with catalysts, then fill with remaining.
-  const symbolsToFetch = [
-    ...Array.from(catalystsMap.keys()),
-    ...activeSymbols.filter(s => !catalystsMap.has(s)),
-  ].slice(0, 500);
-
-  const { data: stepChangesData } = await supabase
+  // 3. Past catalysts: step_change_history WHERE tier='major', most recent per symbol
+  const { data: stepsData } = await supabase
     .from("step_change_history")
-    .select("symbol, id, start_ts, end_ts, days_to_peak, trough_price, peak_price, multiplier, tier, status")
-    .in("symbol", symbolsToFetch)
+    .select("symbol, start_ts, end_ts, multiplier, trough_price, peak_price, id")
+    .eq("tier", "major")
+    .in("symbol", symbols.slice(0, 500))
     .order("end_ts", { ascending: false });
 
-  const recentStepChanges = new Map();
-  if (stepChangesData) {
-    for (const sc of stepChangesData) {
-      if (!recentStepChanges.has(sc.symbol)) {
-        recentStepChanges.set(sc.symbol, sc);
-      }
+  // Dedup: keep most recent per symbol
+  const stepBySymbol = new Map<string, any>();
+  if (stepsData) {
+    for (const s of stepsData) {
+      if (!stepBySymbol.has(s.symbol)) stepBySymbol.set(s.symbol, s);
     }
   }
 
-  const stepChangeIds = Array.from(recentStepChanges.values()).map(sc => sc.id);
-  const { data: catalystExplanations } = await supabase
+  // 4. Perplexity explanations for those step changes
+  const stepIds = Array.from(stepBySymbol.values()).map(s => s.id);
+  const { data: explanationsData } = await supabase
     .from("step_change_catalysts")
     .select("step_change_id, headline, summary, spike_explanation, was_foreseeable, foreseeable_evidence")
-    .in("step_change_id", stepChangeIds);
+    .in("step_change_id", stepIds);
 
-  const explanationsMap = new Map();
-  if (catalystExplanations) {
-    for (const exp of catalystExplanations) {
-      explanationsMap.set(exp.step_change_id, exp);
+  const explanations = new Map();
+  if (explanationsData) {
+    for (const exp of explanationsData) {
+      explanations.set(exp.step_change_id, exp);
     }
   }
 
-  const assetsMap = new Map(assetsData.map(a => [a.symbol, a]));
+  // 5. Future catalysts: forward_catalysts WHERE detected=true
+  const { data: forwardData } = await supabase
+    .from("forward_catalysts")
+    .select("symbol, detected, event_name, expected_window, impact_type, strategic_summary, source_url, confidence, expected_impact_pct")
+    .eq("detected", true)
+    .in("symbol", symbols.slice(0, 500))
+    .order("confidence", { ascending: true }); // high first
 
+  const forwardBySymbol = new Map<string, any>();
+  if (forwardData) {
+    for (const f of forwardData) {
+      if (!forwardBySymbol.has(f.symbol)) forwardBySymbol.set(f.symbol, f);
+    }
+  }
+
+  // 6. Build CompanyCard[]
   const companies: CompanyCard[] = [];
 
-  for (const symbol of symbolsToFetch) {
-    const row = assetsMap.get(symbol);
-    if (!row) continue;
+  for (const asset of assetsData) {
+    const step = stepBySymbol.get(asset.symbol);
+    const exp = step ? explanations.get(step.id) : null;
+    const forward = forwardBySymbol.get(asset.symbol);
 
-    const catalyst = catalystsMap.get(row.symbol) || null;
-    const recentStepChange = recentStepChanges.get(row.symbol) || null;
+    const past_catalyst: PastCatalyst | null = step ? {
+      date: step.end_ts,
+      multiplier: step.multiplier,
+      reason: exp?.headline || "Unknown catalyst",
+      headline: exp?.headline || null,
+      summary: exp?.summary || null,
+      spike_explanation: exp?.spike_explanation || null,
+      was_foreseeable: exp?.was_foreseeable ?? null,
+      foreseeable_evidence: exp?.foreseeable_evidence || null,
+    } : null;
 
-    if (recentStepChange) {
-      const explanation = explanationsMap.get(recentStepChange.id);
-      if (explanation) {
-        recentStepChange.catalyst_explanation = explanation;
-      }
-    }
-
-    const lastClose = latestPrices.get(row.symbol) || 0;
+    const future_catalyst: FutureCatalyst | null = forward ? {
+      date: forward.expected_window || null,
+      event_name: forward.event_name || null,
+      impact_pct: forward.expected_impact_pct ?? null,
+      impact_type: forward.impact_type || null,
+      confidence: forward.confidence || null,
+      summary: forward.strategic_summary || null,
+      source_url: forward.source_url || null,
+    } : null;
 
     companies.push({
-      symbol: row.symbol,
-      name: row.name || row.symbol,
-      sector: row.sector || "Unknown",
-      industry: row.industry || "Unknown",
-      last_close: lastClose,
-      market_cap_usd: row.market_cap_usd ?? undefined,
-      predicted_catalyst: catalyst ?? undefined,
-      recent_step_change: recentStepChange ?? undefined,
-      upcoming_events: [],
-      exchange: row.exchange,
+      symbol: asset.symbol,
+      name: asset.name || asset.symbol,
+      exchange: asset.exchange,
+      sector: asset.sector || "Unknown",
+      industry: asset.industry || "Unknown",
+      last_close: prices.get(asset.symbol) || 0,
+      market_cap_usd: asset.market_cap_usd ?? undefined,
+      past_catalyst,
+      future_catalyst,
     });
   }
 
@@ -125,7 +127,7 @@ async function fetchUniverseCompanies(): Promise<CompanyCard[]> {
 export function useCompanies() {
   return useQuery({
     queryKey: ["companies"],
-    queryFn: fetchUniverseCompanies,
+    queryFn: fetchCompanies,
     staleTime: 5 * 60 * 1000,
   });
 }

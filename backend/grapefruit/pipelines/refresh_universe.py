@@ -99,12 +99,6 @@ def run() -> int:
         log.info("%s: %d native commons, %d bulk rows -> %d kept, %d ML excluded (fx %s=%.4f)",
                  exchange, len(native), len(raw), kept, excluded_ml, currency, fx)
 
-    # Exclude symbols with active risk flags.
-    risk_flagged = storage.symbols_with_active_risk_flags()
-    if risk_flagged:
-        log.info("excluding %d risk-flagged symbols from universe", len(risk_flagged))
-        rows = [r for r in rows if r["symbol"] not in risk_flagged]
-
     # Clean up stale US symbols from a prior universe build.
     _cleanup_us_symbols()
 

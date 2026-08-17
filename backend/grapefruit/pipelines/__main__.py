@@ -23,17 +23,10 @@ log = logging.getLogger("pipelines")
 KNOWN_JOBS = {
     "refresh_universe",
     "refresh_bars",
-    "refresh_fundamentals",
-    "enrich_catalysts",
     "refresh_sectors",
-    "refresh_upcoming_events",
-    "scan_forward_catalysts",
-    "scan_tier1_biotech_catalysts",
-    "scan_tier1_spinoffs",
-    "scan_tier2_earnings_contracts",
-    "scan_tier3_structural_events",
-    "scan_universe_incremental",
-    "compute_strategy_tags",
+    "detect_step_changes",
+    "enrich_catalysts",
+    "scan_catalysts",
     "weekly",
 }
 
