@@ -37,10 +37,11 @@ def main(argv: list[str]) -> int:
         return 2
 
     job_name = argv[1]
-    storage.init_db()
-    run_id = storage.start_pipeline_run(job_name)
-    log.info("starting %s (run_id=%d)", job_name, run_id)
+    run_id: int | None = None
     try:
+        storage.init_db()
+        run_id = storage.start_pipeline_run(job_name)
+        log.info("starting %s (run_id=%d)", job_name, run_id)
         mod = importlib.import_module(f"grapefruit.pipelines.{job_name}")
         rows = int(mod.run())
         storage.finish_pipeline_run(run_id, rows_processed=rows)
@@ -48,9 +49,14 @@ def main(argv: list[str]) -> int:
         return 0
     except Exception as exc:  # noqa: BLE001
         err = f"{type(exc).__name__}: {exc}"
-        log.exception("failed %s (run_id=%d)", job_name, run_id)
-        storage.finish_pipeline_run(run_id, error=f"{err}\n{traceback.format_exc()[:2000]}")
+        if run_id is None:
+            log.exception("failed %s", job_name)
+        else:
+            log.exception("failed %s (run_id=%d)", job_name, run_id)
+            storage.finish_pipeline_run(run_id, error=f"{err}\n{traceback.format_exc()[:2000]}")
         return 1
+    finally:
+        storage.close_pool()
 
 
 if __name__ == "__main__":

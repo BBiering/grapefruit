@@ -22,6 +22,15 @@ _pool_lock = threading.Lock()
 _pool: ConnectionPool | None = None
 
 
+def close_pool(timeout: float = 5.0) -> None:
+    """Close the process-wide PostgreSQL pool and its worker threads."""
+    global _pool
+    with _pool_lock:
+        pool, _pool = _pool, None
+    if pool is not None:
+        pool.close(timeout=timeout)
+
+
 def _get_pool() -> ConnectionPool:
     global _pool
     with _pool_lock:
