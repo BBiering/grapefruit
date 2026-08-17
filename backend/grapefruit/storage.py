@@ -140,7 +140,7 @@ def init_db() -> None:
                 breakout_ratio DOUBLE PRECISION,
                 market_cap_usd_at_peak DOUBLE PRECISION,
                 status TEXT CHECK (status IN ('held', 'faded')),
-                tier TEXT CHECK (tier IN ('major',)),
+                tier TEXT CHECK (tier IN ('major')),
                 detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE (symbol, end_ts)
             )
