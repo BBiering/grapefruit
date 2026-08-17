@@ -540,7 +540,7 @@ def upsert_step_change_catalyst(row: dict) -> None:
                 row.get("was_foreseeable"),
                 row.get("foreseeable_evidence"),
                 json.dumps(row.get("perplexity_citations")) if row.get("perplexity_citations") else None,
-                row.get("model", "sonar-pro"),
+                row.get("model", "agent-low"),
             ],
         )
 

@@ -65,7 +65,7 @@ def run() -> int:
             "expected_window": report.get("event_date"),
             "strategic_summary": report.get("strategic_summary"),
             "source_url": report.get("source_url"),
-            "model": "sonar-pro",
+            "model": "agent-fast",
             "confidence": report.get("confidence"),
             "expected_impact_pct": report.get("expected_impact_pct"),
         })

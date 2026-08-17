@@ -6,8 +6,8 @@ Two-step flow (Perplexity Search API + Sonar chat):
 2. A Sonar chat completion extracts a structured catalyst report from those
    results, so `source_url` is grounded in real results, not hallucinated.
 
-Also provides `explain_move` for past step changes (kept on chat completions
-since it reasons about known price data rather than needing fresh retrieval).
+Also provides `explain_move` for past step changes, using the Agent API with
+finance_search, web_search, and fetch_url for grounded historical explanations.
 """
 from __future__ import annotations
 
@@ -25,12 +25,20 @@ from grapefruit.rate_limit import PERPLEXITY_BUCKET, redact
 
 log = logging.getLogger(__name__)
 
-_SONAR_URL = "https://api.perplexity.ai/chat/completions"
 _SEARCH_URL = "https://api.perplexity.ai/search"
-_MODEL = "sonar"
-_FORWARD_MODEL = "sonar-pro"  # stronger web reasoning for catalyst extraction
+_MODEL = "agent-low"
+_FORWARD_MODEL = "agent-fast"  # extraction from already-retrieved search results
 _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
+
+_perplexity_client = None
+def _get_perplexity_client():
+    """Create the Agent API client lazily so imports stay cheap for tests."""
+    global _perplexity_client
+    if _perplexity_client is None:
+        from perplexity import Perplexity
+        _perplexity_client = Perplexity(api_key=settings.perplexity_api_key)
+    return _perplexity_client
 
 
 def web_search(
@@ -170,8 +178,9 @@ def explain_move(
 ) -> dict:
     """Explain a past 5x+ step change with a structured catalyst report.
 
-    Reasons about known price data (no retrieval needed), so it stays on the
-    regular chat-completions endpoint. Pure function — the caller persists.
+    The Agent API can combine the known price window with finance/search tools
+    to find filings, transcripts, and contemporaneous news. Pure function —
+    the caller persists.
     """
     del refresh  # caching is handled by callers now
 
@@ -230,32 +239,37 @@ def explain_move(
         "}"
     )
 
-    payload = {
-        "model": _MODEL,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a financial research assistant. Identify real-world "
-                    "catalysts for sharp European equity moves. Return only the JSON object "
-                    "matching the user's schema; do not wrap it in prose or fences."
-                ),
-            },
-            {"role": "user", "content": user_msg},
-        ],
-    }
-    headers = {
-        "Authorization": f"Bearer {settings.perplexity_api_key}",
-        "Content-Type": "application/json",
-    }
-
     try:
-        resp = _post_with_retry(_SONAR_URL, headers, payload, symbol)
-        if resp is None:
-            return {**base, "error": "rate_limited"}
-        data = resp.json()
-        raw = data["choices"][0]["message"]["content"].strip()
-        parsed = _parse_json_response(raw)
+        parsed, response = _agent_json(
+            user_msg,
+            preset="low",
+            instructions=(
+                "Use finance_search first for filings, earnings transcripts, company "
+                "financials, and structured market data. Use web_search and fetch_url "
+                "to verify the relevant announcement. Return only the requested JSON."
+            ),
+            tools=[
+                {"type": "finance_search"},
+                {"type": "web_search"},
+                {"type": "fetch_url"},
+            ],
+            schema={
+                "type": "object",
+                "properties": {
+                    "headline": {"type": "string"},
+                    "summary": {"type": "string"},
+                    "spike_explanation": {"type": "string"},
+                    "was_foreseeable": {"type": ["boolean", "null"]},
+                    "foreseeable_evidence": {"type": "string"},
+                },
+                "required": [
+                    "headline", "summary", "spike_explanation",
+                    "was_foreseeable", "foreseeable_evidence",
+                ],
+                "additionalProperties": False,
+            },
+        )
+        raw = _response_text(response)
         result = {
             **base,
             "headline": (parsed.get("headline") or "").strip(),
@@ -266,56 +280,101 @@ def explain_move(
             else None,
             "foreseeable_evidence": (parsed.get("foreseeable_evidence") or "").strip(),
             "raw": raw,
+            "citations": _extract_urls(response),
         }
-        if not result["summary"] and not parsed:
+        if not result["summary"] and raw:
             result["summary"] = raw
         return result
-    except httpx.HTTPStatusError as exc:
-        body = ""
-        try:
-            body = redact(exc.response.text[:500])
-        except Exception:  # noqa: BLE001
-            pass
-        log.warning("perplexity %s returned %s: %s", symbol, exc.response.status_code, body)
-        return {**base, "error": f"http_{exc.response.status_code}"}
     except Exception as exc:  # noqa: BLE001
-        log.warning("perplexity fetch failed for %s: %s", symbol, redact(str(exc)))
-        return {**base, "error": f"fetch_failed: {type(exc).__name__}"}
+        log.warning("perplexity Agent API failed for %s: %s", symbol, redact(str(exc)))
+        return {**base, "error": f"agent_failed: {type(exc).__name__}"}
 
 
 # ---------------------------------------------------------------------------
 # low-level HTTP helpers
 # ---------------------------------------------------------------------------
 
-def _query_json(user_msg: str, model: str = _FORWARD_MODEL) -> dict:
-    """Single sonar chat call that returns the parsed JSON from the answer."""
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": (
-                    "You are a precise financial data extraction engine. Return ONLY "
-                    "the JSON object matching the user's schema; no prose or fences."
-                ),
+def _query_json(user_msg: str) -> dict:
+    """Agent API extraction from already-retrieved Search API results."""
+    parsed, _ = _agent_json(
+        user_msg,
+        preset="fast",
+        instructions="Return only the JSON object requested by the user.",
+    )
+    return parsed
+
+
+def _agent_json(
+    user_msg: str,
+    *,
+    preset: str,
+    instructions: str,
+    tools: list[dict] | None = None,
+    schema: dict | None = None,
+):
+    """Call Agent API and parse its output as JSON."""
+    PERPLEXITY_BUCKET.acquire()
+    kwargs = {
+        "preset": preset,
+        "input": user_msg,
+        "instructions": instructions,
+        "tools": tools or [],
+        "max_steps": 5,
+    }
+    if schema:
+        kwargs["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "catalyst_report",
+                "schema": schema,
+                "strict": True,
             },
-            {"role": "user", "content": user_msg},
-        ],
-        "temperature": 0.2,
-    }
-    headers = {
-        "Authorization": f"Bearer {settings.perplexity_api_key}",
-        "Content-Type": "application/json",
-    }
+        }
+    response = _get_perplexity_client().responses.create(**kwargs)
+    return _parse_json_response(_response_text(response)), response
+
+
+def _response_text(response) -> str:
+    """Read Agent API message text without relying on SDK output_text.
+
+    The SDK can expose tool output items with ``content=None``; its convenience
+    property currently assumes every output item has iterable content.
+    """
+    if response is None:
+        return ""
+    texts: list[str] = []
+    for item in getattr(response, "output", []) or []:
+        for part in getattr(item, "content", None) or []:
+            text = getattr(part, "text", None)
+            if isinstance(text, str):
+                texts.append(text)
+    return "".join(texts)
+
+
+def _extract_urls(response) -> list[str]:
+    """Extract source URLs from Agent API output items for persistence."""
+    if response is None:
+        return []
     try:
-        resp = _post_with_retry(_SONAR_URL, headers, payload, "extract")
-        if resp is None:
-            return {}
-        raw = resp.json()["choices"][0]["message"]["content"].strip()
-        return _parse_json_response(raw)
-    except Exception as exc:  # noqa: BLE001
-        log.warning("perplexity extraction failed: %s", redact(str(exc)))
-        return {}
+        data = response.model_dump(warnings=False)
+    except Exception:  # noqa: BLE001
+        return []
+    urls: list[str] = []
+
+    def visit(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in {"url", "source_url"} and isinstance(item, str):
+                    if item.startswith(("http://", "https://")) and item not in urls:
+                        urls.append(item)
+                else:
+                    visit(item)
+        elif isinstance(value, list):
+            for item in value:
+                visit(item)
+
+    visit(data)
+    return urls[:20]
 
 
 def _post_search(headers: dict, payload: dict) -> httpx.Response | None:
@@ -354,34 +413,6 @@ def _post_search(headers: dict, payload: dict) -> httpx.Response | None:
             )
             return None
         return resp
-    return None
-
-
-def _post_with_retry(url: str, headers: dict, payload: dict, symbol: str) -> httpx.Response | None:
-    """POST chat completions with 429/5xx retry honoring Retry-After."""
-    for attempt in range(_MAX_RETRIES):
-        PERPLEXITY_BUCKET.acquire()
-        resp = httpx.post(url, headers=headers, json=payload, timeout=45.0)
-        if resp.status_code == 429:
-            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
-            log.warning(
-                "perplexity 429 for %s; sleeping %.1fs (attempt %d/%d)",
-                symbol, retry_after, attempt + 1, _MAX_RETRIES,
-            )
-            time.sleep(retry_after)
-            continue
-        if resp.status_code >= 500:
-            retry_after = _parse_retry_after(resp.headers.get("Retry-After"))
-            if attempt + 1 < _MAX_RETRIES:
-                log.warning(
-                    "perplexity %d for %s; sleeping %.1fs (attempt %d/%d)",
-                    resp.status_code, symbol, retry_after, attempt + 1, _MAX_RETRIES,
-                )
-                time.sleep(retry_after)
-                continue
-        resp.raise_for_status()
-        return resp
-    log.warning("perplexity gave up on %s after %d retries", symbol, _MAX_RETRIES)
     return None
 
 

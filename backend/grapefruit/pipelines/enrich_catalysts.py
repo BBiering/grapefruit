@@ -63,7 +63,7 @@ def run(limit: int = 250) -> int:
                 "was_foreseeable": result.get("was_foreseeable"),
                 "foreseeable_evidence": result.get("foreseeable_evidence") or None,
                 "perplexity_citations": result.get("citations"),
-                "model": "sonar-pro",
+                "model": "agent-low",
             }
         )
 
