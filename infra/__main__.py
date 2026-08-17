@@ -47,30 +47,19 @@ DATABASE_URL = config.require_secret("database_url")
 JOB_NAMES = [
     "refresh_universe",
     "refresh_bars",
-    "refresh_fundamentals",
-    "detect_winners",
-    "detect_watchlist_moves",
-    "enrich_catalysts",
-    "refresh_watchlist",
     "refresh_sectors",
-    "refresh_upcoming_events",
-    "scan_forward_catalysts",
-    "scan_tier1_biotech_catalysts",
-    "scan_tier1_spinoffs",
-    "scan_tier2_earnings_contracts",
-    "scan_tier3_structural_events",
-    "scan_universe_incremental",
-    "compute_strategy_tags",
+    "detect_step_changes",
+    "enrich_catalysts",
+    "scan_catalysts",
     "weekly",
 ]
 
-# Per-job overrides: weekly is the long orchestrator, catalyst scans need more time.
+# Weekly is the long orchestrator. The unified catalyst scan can run directly
+# for manual retries; 30 minutes covers the current universe at the shared
+# Perplexity rate limit.
 TIMEOUTS = {
-    "weekly": "7200s",                          # 2h
-    "scan_tier1_biotech_catalysts": "3600s",    # 1h (200 stocks × ~10s = 33+ min)
-    "scan_tier1_spinoffs": "5400s",             # 1.5h (300 stocks × ~10s = 50+ min)
-    "scan_universe_incremental": "3600s",       # 1h (250 stocks × ~10s = 42+ min)
-    "scan_tier2_earnings_contracts": "2700s",   # 45min (150 stocks × ~10s = 25+ min)
+    "weekly": "7200s",       # 2h
+    "scan_catalysts": "3600s",  # 1h safety margin for search + extraction
 }
 DEFAULT_TIMEOUT = "1800s"        # 30m
 DEFAULT_MEMORY = "1Gi"

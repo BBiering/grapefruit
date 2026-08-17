@@ -1,7 +1,7 @@
 # Pulumi: GCP infra for Grapefruit pipelines
 
 Pulumi owns the **structure** of the GCP resources (Artifact Registry repo,
-two service accounts + IAM, three Secret Manager secrets, eight Cloud Run
+two service accounts + IAM, three Secret Manager secrets, seven Cloud Run
 Jobs, two Cloud Scheduler entries). The image bytes are rolled out separately
 by `.github/workflows/deploy-jobs.yml` (it calls `gcloud run jobs update
 --image=...` on each push to `main`), so routine pipeline code changes never
