@@ -1,6 +1,6 @@
 """Weekly: scan every symbol's cached bars and detect 5x+ step changes.
 
-Finds every event where price rose >= 5x in <= 7 consecutive bars, the peak
+Finds every event where price rose >= 5x in <= 10 consecutive bars, the peak
 held >= 70% for 30 calendar days, and the peak was >= 1.5x the 180-day high
 before the trough. Stores in step_change_history with tier='major'.
 """
@@ -34,7 +34,7 @@ def run() -> int:
             closes,
             dates,
             min_multiplier=5.0,
-            max_days=7,
+            max_days=10,
             post_peak_retention_min=0.70,
             breakout_vs_prior_high_min=1.5,
         )
