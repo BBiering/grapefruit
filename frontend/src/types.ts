@@ -1,4 +1,5 @@
 export interface PastCatalyst {
+  start_date: string;
   date: string;
   multiplier: number;
   reason: string;
@@ -9,7 +10,7 @@ export interface PastCatalyst {
   foreseeable_evidence: string | null;
 }
 
-export interface FutureCatalyst {
+export interface PredictedCatalyst {
   date: string | null;
   event_name: string | null;
   impact_pct: number | null;
@@ -31,6 +32,6 @@ export interface CompanyCard {
   // Past: most recent 5×+ event with Perplexity explanation
   past_catalyst: PastCatalyst | null;
 
-  // Future: upcoming catalyst in next 3 months
-  future_catalyst: FutureCatalyst | null;
+  // Predicted: catalyst identified before its expected date
+  predicted_catalyst: PredictedCatalyst | null;
 }

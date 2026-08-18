@@ -1,34 +1,34 @@
 import { useQuery } from "@tanstack/react-query";
-import { LineChart, Line, ReferenceLine, ReferenceArea } from "recharts";
+import { LineChart, Line, ReferenceLine, ReferenceArea, XAxis, YAxis, Tooltip } from "recharts";
 import { supabase } from "../supabase";
 
 interface Bar {
   ts: string;
-  close: number;
+  close: number | null;
 }
 
 interface MiniChartProps {
   symbol: string;
-  pastEvent?: { start_ts: string; multiplier: number };
-  futureDate?: string;
+  pastEvent?: { start_ts: string; end_ts: string };
+  predictedDate?: string;
 }
 
 async function fetchBars(symbol: string): Promise<Bar[]> {
-  const twoYearsAgo = new Date();
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+  const threeYearsAgo = new Date();
+  threeYearsAgo.setFullYear(threeYearsAgo.getFullYear() - 3);
 
   const { data, error } = await supabase
     .from("bars")
     .select("ts, close")
     .eq("symbol", symbol)
-    .gte("ts", twoYearsAgo.toISOString().slice(0, 10))
+    .gte("ts", threeYearsAgo.toISOString().slice(0, 10))
     .order("ts", { ascending: true });
 
   if (error) throw error;
   return (data ?? []) as Bar[];
 }
 
-export function MiniChart({ symbol, pastEvent, futureDate }: MiniChartProps) {
+export function MiniChart({ symbol, pastEvent, predictedDate }: MiniChartProps) {
   const { data: bars = [] } = useQuery({
     queryKey: ["bars-mini", symbol],
     queryFn: () => fetchBars(symbol),
@@ -36,34 +36,50 @@ export function MiniChart({ symbol, pastEvent, futureDate }: MiniChartProps) {
   });
 
   if (!bars.length) {
-    return <div style={{ height: 140, display: "flex", alignItems: "center", justifyContent: "center", color: "#6b6661" }}>—</div>;
+    return <div className="chart-empty">No price data</div>;
+  }
+
+  // Include a null future point so Recharts includes the predicted date in its x-axis domain.
+  const chartBars = [...bars];
+  if (predictedDate && predictedDate > bars[bars.length - 1].ts) {
+    chartBars.push({ ts: predictedDate, close: null });
   }
 
   return (
-    <LineChart width={260} height={140} data={bars} margin={{ top: 5, right: 5, bottom: 5, left: 5 }}>
-      {/* Past step change zone (yellow) */}
-      {pastEvent && (
-        <ReferenceArea
-          x1={pastEvent.start_ts}
-          x2={bars[bars.length - 1]?.ts}
-          fill="#f4bd4c"
-          fillOpacity={0.12}
+    <div className="chart-frame">
+      <LineChart width={560} height={240} data={chartBars} margin={{ top: 8, right: 18, bottom: 8, left: 8 }}>
+        <XAxis dataKey="ts" tick={{ fontSize: 10 }} minTickGap={45} tickFormatter={(value) => String(value).slice(0, 7)} />
+        <YAxis width={48} tick={{ fontSize: 10 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
+        <Tooltip labelFormatter={(value) => `Date: ${value}`} formatter={(value) => [value == null ? "—" : `$${Number(value).toFixed(2)}`, "Close"]} />
+
+        {/* Retrospective event: yellow vertical markers and highlighted event window */}
+        {pastEvent && (
+          <>
+            <ReferenceLine x={pastEvent.start_ts} stroke="#d79d00" strokeWidth={2} />
+            <ReferenceLine x={pastEvent.end_ts} stroke="#d79d00" strokeWidth={2} />
+            <ReferenceArea x1={pastEvent.start_ts} x2={pastEvent.end_ts} fill="#f4bd4c" fillOpacity={0.25} />
+          </>
+        )}
+
+        {/* Prediction: blue vertical dashed marker */}
+        {predictedDate && (
+          <ReferenceLine x={predictedDate} stroke="#2879d0" strokeDasharray="6 4" strokeWidth={2} />
+        )}
+
+        <Line
+          type="monotone"
+          dataKey="close"
+          stroke="#e8664f"
+          strokeWidth={2}
+          dot={false}
+          connectNulls={false}
+          isAnimationActive={false}
         />
-      )}
-
-      {/* Future catalyst line (blue dashed) */}
-      {futureDate && (
-        <ReferenceLine x={futureDate} stroke="#4c9aff" strokeDasharray="4 3" strokeWidth={1.5} />
-      )}
-
-      <Line
-        type="monotone"
-        dataKey="close"
-        stroke="#e8664f"
-        strokeWidth={1.5}
-        dot={false}
-        isAnimationActive={false}
-      />
-    </LineChart>
+      </LineChart>
+      <div className="chart-legend">
+        <span className="legend-past">━ Past catalyst</span>
+        <span className="legend-predicted">┆ Predicted catalyst</span>
+      </div>
+    </div>
   );
 }

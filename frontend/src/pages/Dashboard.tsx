@@ -19,16 +19,16 @@ export function Dashboard() {
         return mb - ma;
       });
     } else {
-      // Sort by future catalyst confidence (high > medium > low > none),
+      // Sort by predicted catalyst confidence (high > medium > low > none),
       // then by expected impact percentage (largest first)
       const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
       copy.sort((a, b) => {
-        const ca = a.future_catalyst?.confidence;
-        const cb = b.future_catalyst?.confidence;
+        const ca = a.predicted_catalyst?.confidence;
+        const cb = b.predicted_catalyst?.confidence;
         const oa = ca ? (order[ca] ?? 3) : 3;
         const ob = cb ? (order[cb] ?? 3) : 3;
         if (oa !== ob) return oa - ob;
-        return (b.future_catalyst?.impact_pct ?? 0) - (a.future_catalyst?.impact_pct ?? 0);
+        return (b.predicted_catalyst?.impact_pct ?? 0) - (a.predicted_catalyst?.impact_pct ?? 0);
       });
     }
     return copy;

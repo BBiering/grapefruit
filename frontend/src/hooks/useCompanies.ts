@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../supabase";
-import type { CompanyCard, PastCatalyst, FutureCatalyst } from "../types";
+import type { CompanyCard, PastCatalyst, PredictedCatalyst } from "../types";
 
 const ACTIVE_EXCHANGES = ["PA"];
 
@@ -90,6 +90,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
     const forward = forwardBySymbol.get(asset.symbol);
 
     const past_catalyst: PastCatalyst | null = step ? {
+      start_date: step.start_ts,
       date: step.end_ts,
       multiplier: step.multiplier,
       reason: exp?.headline || "Unknown catalyst",
@@ -100,7 +101,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       foreseeable_evidence: exp?.foreseeable_evidence || null,
     } : null;
 
-    const future_catalyst: FutureCatalyst | null = forward ? {
+    const predicted_catalyst: PredictedCatalyst | null = forward ? {
       date: forward.expected_window || null,
       event_name: forward.event_name || null,
       impact_pct: forward.expected_impact_pct ?? null,
@@ -119,7 +120,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       last_close: prices.get(asset.symbol) || 0,
       market_cap_usd: asset.market_cap_usd ?? undefined,
       past_catalyst,
-      future_catalyst,
+      predicted_catalyst,
     });
   }
 
