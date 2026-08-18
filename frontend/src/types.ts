@@ -23,6 +23,18 @@ export interface PredictedCatalyst {
   scanned_at: string;
 }
 
+export interface PredictionPerformance {
+  total: number;
+  reviewed: number;
+  pending: number;
+  occurred: number;
+  missed: number;
+  unclear: number;
+  hit_rate: number | null;
+  average_expected_pct: number | null;
+  average_actual_pct: number | null;
+}
+
 export interface CompanyCard {
   symbol: string;
   name: string;

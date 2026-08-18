@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../supabase";
-import type { CompanyCard, PastCatalyst, PredictedCatalyst } from "../types";
+import type { CompanyCard, PastCatalyst, PredictedCatalyst, PredictionPerformance } from "../types";
 
 const ACTIVE_EXCHANGES = ["PA"];
 
@@ -135,6 +135,43 @@ export function useCompanies() {
   return useQuery({
     queryKey: ["companies"],
     queryFn: fetchCompanies,
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+async function fetchPredictionPerformance(): Promise<PredictionPerformance> {
+  const { data, error } = await supabase
+    .from("forward_catalysts")
+    .select("outcome, expected_impact_pct, actual_impact_pct")
+    .eq("detected", true);
+  if (error) throw error;
+
+  const rows = data || [];
+  const reviewed = rows.filter((row) => row.outcome !== "pending");
+  const occurred = rows.filter((row) => row.outcome === "occurred");
+  const missed = rows.filter((row) => row.outcome === "missed");
+  const unclear = rows.filter((row) => row.outcome === "unclear");
+  const avg = (values: number[]) => values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+  const expected = rows.map((row) => row.expected_impact_pct).filter((v): v is number => typeof v === "number");
+  const actual = reviewed.map((row) => row.actual_impact_pct).filter((v): v is number => typeof v === "number");
+
+  return {
+    total: rows.length,
+    reviewed: reviewed.length,
+    pending: rows.length - reviewed.length,
+    occurred: occurred.length,
+    missed: missed.length,
+    unclear: unclear.length,
+    hit_rate: reviewed.length ? occurred.length / reviewed.length : null,
+    average_expected_pct: avg(expected),
+    average_actual_pct: avg(actual),
+  };
+}
+
+export function usePredictionPerformance() {
+  return useQuery({
+    queryKey: ["prediction-performance"],
+    queryFn: fetchPredictionPerformance,
     staleTime: 5 * 60 * 1000,
   });
 }

@@ -51,6 +51,7 @@ JOB_NAMES = [
     "detect_step_changes",
     "enrich_catalysts",
     "scan_catalysts",
+    "evaluate_predictions",
     "weekly",
 ]
 
@@ -59,7 +60,8 @@ JOB_NAMES = [
 # Perplexity rate limit.
 TIMEOUTS = {
     "weekly": "7200s",       # 2h
-    "scan_catalysts": "3600s",  # 1h safety margin for search + extraction
+    "scan_catalysts": "3600s",          # 1h safety margin for search + extraction
+    "evaluate_predictions": "1800s",    # 30m
 }
 DEFAULT_TIMEOUT = "1800s"        # 30m
 DEFAULT_MEMORY = "1Gi"

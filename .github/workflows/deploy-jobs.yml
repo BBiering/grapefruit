@@ -19,7 +19,7 @@ env:
   IMAGE_NAME: grapefruit-pipelines
   JOBS: >-
     refresh_universe refresh_bars refresh_sectors detect_step_changes
-    enrich_catalysts scan_catalysts weekly
+    enrich_catalysts scan_catalysts evaluate_predictions weekly
 
 jobs:
   build-and-deploy:

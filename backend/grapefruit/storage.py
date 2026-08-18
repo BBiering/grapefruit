@@ -116,6 +116,7 @@ def init_db() -> None:
                 model TEXT,
                 confidence TEXT CHECK (confidence IN ('high', 'medium', 'low')),
                 expected_impact_pct DOUBLE PRECISION,
+                actual_impact_pct DOUBLE PRECISION,
                 outcome TEXT NOT NULL DEFAULT 'pending'
                     CHECK (outcome IN ('pending', 'occurred', 'missed', 'unclear')),
                 outcome_notes TEXT,
@@ -125,6 +126,7 @@ def init_db() -> None:
             )
             """
         )
+        cur.execute("ALTER TABLE forward_catalysts ADD COLUMN IF NOT EXISTS actual_impact_pct DOUBLE PRECISION")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -237,6 +239,12 @@ def last_ts(symbol: str) -> date | None:
         cur.execute("SELECT MAX(ts) FROM bars WHERE symbol = %s", [symbol])
         row = cur.fetchone()
         return row[0] if row and row[0] else None
+
+
+def bar_count(symbol: str) -> int:
+    with _cur() as cur:
+        cur.execute("SELECT COUNT(*) FROM bars WHERE symbol = %s", [symbol])
+        return int(cur.fetchone()[0])
 
 
 def symbols_with_bars() -> list[str]:
@@ -403,6 +411,57 @@ def replace_forward_catalysts(rows: list[dict]) -> int:
                 ],
             )
     return len(detected_rows)
+
+
+def load_pending_predictions(limit: int = 1000) -> list[dict]:
+    """Load predictions eligible for outcome review."""
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT id, symbol, expected_window, expected_impact_pct, confidence
+            FROM forward_catalysts
+            WHERE detected = TRUE AND outcome = 'pending'
+              AND expected_window ~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'
+              AND expected_window::date < CURRENT_DATE
+            ORDER BY expected_window ASC
+            LIMIT %s
+            """,
+            [limit],
+        )
+        return [dict(row) for row in cur.fetchall()]
+
+
+def update_prediction_outcome(
+    prediction_id: int,
+    *,
+    outcome: str,
+    actual_impact_pct: float | None,
+    notes: str,
+) -> None:
+    with _cur() as cur:
+        cur.execute(
+            """
+            UPDATE forward_catalysts
+            SET outcome = %s,
+                actual_impact_pct = %s,
+                outcome_notes = %s,
+                reviewed_at = NOW()
+            WHERE id = %s AND outcome = 'pending'
+            """,
+            [outcome, actual_impact_pct, notes, prediction_id],
+        )
+
+
+def load_prediction_performance() -> list[dict]:
+    with _cur(row_factory=dict_row) as cur:
+        cur.execute(
+            """
+            SELECT outcome, confidence, expected_impact_pct, actual_impact_pct
+            FROM forward_catalysts
+            WHERE detected = TRUE
+            """
+        )
+        return [dict(row) for row in cur.fetchall()]
 
 
 def start_pipeline_run(job_name: str) -> int:

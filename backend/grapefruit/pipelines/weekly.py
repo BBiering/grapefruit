@@ -15,6 +15,7 @@ from grapefruit.pipelines import (
     refresh_sectors,
     refresh_universe,
     scan_catalysts,
+    evaluate_predictions,
 )
 
 
@@ -31,6 +32,7 @@ def run() -> int:
         detect_step_changes,     # 4. Find 5×+ step changes
         enrich_catalysts,        # 5. Explain past events with Perplexity
         scan_catalysts,          # 6. Scan upcoming catalysts with Perplexity
+        evaluate_predictions,    # 7. Review predictions whose dates have passed
     ):
         name = step.__name__.split(".")[-1]
         log.info("==> %s", name)

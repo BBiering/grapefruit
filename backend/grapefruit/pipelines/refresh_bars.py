@@ -22,7 +22,10 @@ _MAX_WORKERS = 16
 
 def _fetch_symbol(symbol: str, today: date) -> pd.DataFrame:
     latest = storage.latest_bar_date(symbol)
-    start = (latest + timedelta(days=1)) if latest else today - timedelta(days=_INITIAL_LOOKBACK_DAYS)
+    # Sparse histories are often newly listed or partially fetched. Re-fetch
+    # the full lookback so an earlier API gap can be repaired on the next run.
+    sparse = storage.bar_count(symbol) < 400
+    start = (today - timedelta(days=_INITIAL_LOOKBACK_DAYS)) if sparse or latest is None else latest + timedelta(days=1)
     if start > today:
         return pd.DataFrame()
     try:

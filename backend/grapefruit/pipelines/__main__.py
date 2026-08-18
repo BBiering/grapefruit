@@ -27,6 +27,7 @@ KNOWN_JOBS = {
     "detect_step_changes",
     "enrich_catalysts",
     "scan_catalysts",
+    "evaluate_predictions",
     "weekly",
 }
 
