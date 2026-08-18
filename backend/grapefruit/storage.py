@@ -105,22 +105,26 @@ def init_db() -> None:
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS forward_catalysts (
-                symbol TEXT PRIMARY KEY REFERENCES assets(symbol) ON DELETE CASCADE,
-                detected BOOLEAN,
-                event_name TEXT,
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL REFERENCES assets(symbol) ON DELETE CASCADE,
+                detected BOOLEAN NOT NULL DEFAULT TRUE,
+                event_name TEXT NOT NULL,
                 impact_type TEXT,
-                expected_window TEXT,
+                expected_window TEXT NOT NULL DEFAULT '',
                 strategic_summary TEXT,
                 source_url TEXT,
                 model TEXT,
-                confidence TEXT,
+                confidence TEXT CHECK (confidence IN ('high', 'medium', 'low')),
                 expected_impact_pct DOUBLE PRECISION,
-                scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                outcome TEXT NOT NULL DEFAULT 'pending'
+                    CHECK (outcome IN ('pending', 'occurred', 'missed', 'unclear')),
+                outcome_notes TEXT,
+                reviewed_at TIMESTAMPTZ,
+                scanned_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                UNIQUE (symbol, event_name, expected_window)
             )
             """
         )
-        cur.execute("ALTER TABLE forward_catalysts ADD COLUMN IF NOT EXISTS confidence TEXT")
-        cur.execute("ALTER TABLE forward_catalysts ADD COLUMN IF NOT EXISTS expected_impact_pct DOUBLE PRECISION")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS pipeline_runs (
@@ -357,26 +361,48 @@ def get_app_state(key: str) -> dict | None:
         return row[0] if row else None
 
 
-_FORWARD_CATALYST_COLS = (
-    "symbol", "detected", "event_name", "impact_type", "expected_window",
-    "strategic_summary", "source_url", "model", "confidence", "expected_impact_pct",
-)
-
-
 def replace_forward_catalysts(rows: list[dict]) -> int:
-    """Atomically replace forward_catalysts with `rows` (one per symbol)."""
-    payload = [tuple(r.get(c) for c in _FORWARD_CATALYST_COLS) for r in rows]
-    placeholders = ", ".join(["%s"] * len(_FORWARD_CATALYST_COLS))
-    collist = ", ".join(_FORWARD_CATALYST_COLS)
+    """Upsert detected predictions without deleting prior prediction history."""
+    detected_rows = [r for r in rows if r.get("detected")]
+    if not detected_rows:
+        return 0
+
     with _conn() as con:
         with con.cursor() as cur:
-            cur.execute("DELETE FROM forward_catalysts")
-            if payload:
-                cur.executemany(
-                    f"INSERT INTO forward_catalysts ({collist}) VALUES ({placeholders})",
-                    payload,
+            cur.executemany(
+                """
+                INSERT INTO forward_catalysts (
+                    symbol, detected, event_name, impact_type, expected_window,
+                    strategic_summary, source_url, model, confidence,
+                    expected_impact_pct, scanned_at
                 )
-    return len(payload)
+                VALUES (%s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                ON CONFLICT (symbol, event_name, expected_window) DO UPDATE SET
+                    detected = TRUE,
+                    impact_type = EXCLUDED.impact_type,
+                    strategic_summary = EXCLUDED.strategic_summary,
+                    source_url = EXCLUDED.source_url,
+                    model = EXCLUDED.model,
+                    confidence = EXCLUDED.confidence,
+                    expected_impact_pct = EXCLUDED.expected_impact_pct,
+                    scanned_at = EXCLUDED.scanned_at
+                """,
+                [
+                    (
+                        r["symbol"],
+                        r.get("event_name") or "Unspecified catalyst",
+                        r.get("impact_type"),
+                        r.get("expected_window") or "",
+                        r.get("strategic_summary"),
+                        r.get("source_url"),
+                        r.get("model", "agent-fast"),
+                        r.get("confidence"),
+                        r.get("expected_impact_pct"),
+                    )
+                    for r in detected_rows
+                ],
+            )
+    return len(detected_rows)
 
 
 def start_pipeline_run(job_name: str) -> int:

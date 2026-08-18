@@ -22,6 +22,7 @@ function impactText(impact: number | null) {
 export function CompanyCard({ company }: Props) {
   const [expanded, setExpanded] = useState(false);
   const pc = company.past_catalyst;
+  const predictedEvents = company.predicted_catalysts;
   const predicted = company.predicted_catalyst;
 
   return (
@@ -75,22 +76,22 @@ export function CompanyCard({ company }: Props) {
         <div className="card-detail">
           <h4 className="timeline-title">Catalyst timeline</h4>
           <div className="timeline">
-            {predicted && (
-              <div className="timeline-item predicted">
+            {predictedEvents.map((event) => (
+              <div className="timeline-item predicted" key={event.id}>
                 <div className="timeline-marker" />
                 <div>
                   <div className="timeline-heading">
-                    {predicted.date || "Date unknown"} — Predicted Catalyst — {predicted.impact_type || predicted.event_name || "Other"}
+                    {event.date || "Date unknown"} — Predicted Catalyst — {event.impact_type || event.event_name || "Other"}
                   </div>
-                  {predicted.event_name && <p><strong>{predicted.event_name}</strong></p>}
-                  <p>{predicted.summary || "No detailed description available."}</p>
-                  <p>{impactText(predicted.impact_pct)} | Confidence: {confidenceBadge(predicted.confidence)}</p>
-                  {predicted.source_url && (
-                    <p><a href={predicted.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>View source</a></p>
+                  {event.event_name && <p><strong>{event.event_name}</strong></p>}
+                  <p>{event.summary || "No detailed description available."}</p>
+                  <p>{impactText(event.impact_pct)} | Confidence: {confidenceBadge(event.confidence)} | Status: {event.outcome}</p>
+                  {event.source_url && (
+                    <p><a href={event.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>View source</a></p>
                   )}
                 </div>
               </div>
-            )}
+            ))}
 
             {pc && (
               <div className="timeline-item past">
@@ -119,7 +120,7 @@ export function CompanyCard({ company }: Props) {
               </div>
             )}
 
-            {!predicted && !pc && <p className="muted">No catalyst events recorded.</p>}
+            {!predictedEvents.length && !pc && <p className="muted">No catalyst events recorded.</p>}
           </div>
         </div>
       )}

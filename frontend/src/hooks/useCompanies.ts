@@ -67,18 +67,30 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
   // 5. Future catalysts: forward_catalysts WHERE detected=true
   const { data: forwardData, error: forwardError } = await supabase
     .from("forward_catalysts")
-    .select("symbol, detected, event_name, expected_window, impact_type, strategic_summary, source_url, confidence, expected_impact_pct")
+    .select("id, symbol, detected, event_name, expected_window, impact_type, strategic_summary, source_url, confidence, expected_impact_pct, outcome, scanned_at")
     .eq("detected", true)
     .in("symbol", symbols.slice(0, 500))
-    .order("confidence", { ascending: true }); // high first
+    .order("expected_window", { ascending: false });
 
   if (forwardError) throw forwardError;
 
-  const forwardBySymbol = new Map<string, any>();
-  if (forwardData) {
-    for (const f of forwardData) {
-      if (!forwardBySymbol.has(f.symbol)) forwardBySymbol.set(f.symbol, f);
-    }
+  const predictedBySymbol = new Map<string, PredictedCatalyst[]>();
+  for (const f of forwardData || []) {
+    const event: PredictedCatalyst = {
+      id: f.id,
+      date: f.expected_window || null,
+      event_name: f.event_name || null,
+      impact_pct: f.expected_impact_pct ?? null,
+      impact_type: f.impact_type || null,
+      confidence: f.confidence || null,
+      summary: f.strategic_summary || null,
+      source_url: f.source_url || null,
+      outcome: f.outcome || "pending",
+      scanned_at: f.scanned_at,
+    };
+    const events = predictedBySymbol.get(f.symbol) || [];
+    events.push(event);
+    predictedBySymbol.set(f.symbol, events);
   }
 
   // 6. Build CompanyCard[]
@@ -87,7 +99,8 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
   for (const asset of assetsData) {
     const step = stepBySymbol.get(asset.symbol);
     const exp = step ? explanations.get(step.id) : null;
-    const forward = forwardBySymbol.get(asset.symbol);
+    const predicted_catalysts = predictedBySymbol.get(asset.symbol) || [];
+    const predicted_catalyst = predicted_catalysts[0] || null;
 
     const past_catalyst: PastCatalyst | null = step ? {
       start_date: step.start_ts,
@@ -101,16 +114,6 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       foreseeable_evidence: exp?.foreseeable_evidence || null,
     } : null;
 
-    const predicted_catalyst: PredictedCatalyst | null = forward ? {
-      date: forward.expected_window || null,
-      event_name: forward.event_name || null,
-      impact_pct: forward.expected_impact_pct ?? null,
-      impact_type: forward.impact_type || null,
-      confidence: forward.confidence || null,
-      summary: forward.strategic_summary || null,
-      source_url: forward.source_url || null,
-    } : null;
-
     companies.push({
       symbol: asset.symbol,
       name: asset.name || asset.symbol,
@@ -121,6 +124,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       market_cap_usd: asset.market_cap_usd ?? undefined,
       past_catalyst,
       predicted_catalyst,
+      predicted_catalysts,
     });
   }
 

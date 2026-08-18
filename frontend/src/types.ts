@@ -11,6 +11,7 @@ export interface PastCatalyst {
 }
 
 export interface PredictedCatalyst {
+  id: number;
   date: string | null;
   event_name: string | null;
   impact_pct: number | null;
@@ -18,6 +19,8 @@ export interface PredictedCatalyst {
   confidence: "high" | "medium" | "low" | null;
   summary: string | null;
   source_url: string | null;
+  outcome: "pending" | "occurred" | "missed" | "unclear";
+  scanned_at: string;
 }
 
 export interface CompanyCard {
@@ -34,4 +37,5 @@ export interface CompanyCard {
 
   // Predicted: catalyst identified before its expected date
   predicted_catalyst: PredictedCatalyst | null;
+  predicted_catalysts: PredictedCatalyst[];
 }
