@@ -10,7 +10,7 @@ interface Bar {
 interface MiniChartProps {
   symbol: string;
   pastEvent?: { start_ts: string; end_ts: string };
-  predictedDate?: string;
+  predictedDates?: string[];
 }
 
 async function fetchBars(symbol: string): Promise<Bar[]> {
@@ -28,7 +28,7 @@ async function fetchBars(symbol: string): Promise<Bar[]> {
   return (data ?? []) as Bar[];
 }
 
-export function MiniChart({ symbol, pastEvent, predictedDate }: MiniChartProps) {
+export function MiniChart({ symbol, pastEvent, predictedDates = [] }: MiniChartProps) {
   const { data: bars = [] } = useQuery({
     queryKey: ["bars-mini", symbol],
     queryFn: () => fetchBars(symbol),
@@ -41,9 +41,12 @@ export function MiniChart({ symbol, pastEvent, predictedDate }: MiniChartProps) 
 
   // Include a null future point so Recharts includes the predicted date in its x-axis domain.
   const chartBars = [...bars];
-  if (predictedDate && predictedDate > bars[bars.length - 1].ts) {
-    chartBars.push({ ts: predictedDate, close: null });
+  for (const date of predictedDates) {
+    if (date > bars[bars.length - 1].ts && !chartBars.some((bar) => bar.ts === date)) {
+      chartBars.push({ ts: date, close: null });
+    }
   }
+  chartBars.sort((a, b) => a.ts.localeCompare(b.ts));
 
   return (
     <div className="chart-frame">
@@ -62,9 +65,9 @@ export function MiniChart({ symbol, pastEvent, predictedDate }: MiniChartProps) 
         )}
 
         {/* Prediction: blue vertical dashed marker */}
-        {predictedDate && (
-          <ReferenceLine x={predictedDate} stroke="#2879d0" strokeDasharray="6 4" strokeWidth={2} />
-        )}
+        {predictedDates.map((date) => (
+          <ReferenceLine key={date} x={date} stroke="#2879d0" strokeDasharray="6 4" strokeWidth={2} />
+        ))}
 
         <Line
           type="monotone"

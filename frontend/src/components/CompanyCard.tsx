@@ -35,7 +35,7 @@ export function CompanyCard({ company }: Props) {
           <MiniChart
             symbol={company.symbol}
             pastEvent={pc ? { start_ts: pc.start_date, end_ts: pc.date } : undefined}
-            predictedDate={predicted?.date || undefined}
+            predictedDates={predictedEvents.map((event) => event.date).filter((date): date is string => Boolean(date))}
           />
         </div>
 
