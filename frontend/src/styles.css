@@ -584,6 +584,7 @@ code {
 }
 
 .performance-panel {
+  width: 80%;
   max-width: 1600px;
   margin: 1rem auto 0;
   padding: 0.75rem 2rem;
@@ -608,6 +609,7 @@ code {
 .performance-panel span { color: var(--muted); font-size: 0.72rem; margin-top: 0.2rem; }
 
 .card-list {
+  width: 80%;
   padding: 1.5rem 2rem;
   max-width: 1600px;
   margin: 0 auto;
@@ -1148,6 +1150,11 @@ code {
 
 /* Responsive */
 @media (max-width: 900px) {
+  .performance-panel,
+  .card-list {
+    width: 100%;
+  }
+
   .performance-panel {
     grid-template-columns: repeat(3, 1fr);
     padding: 1rem;
