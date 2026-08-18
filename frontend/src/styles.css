@@ -985,15 +985,10 @@ code {
 
 /* Dashboard Layout */
 .dashboard {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  grid-template-rows: auto 1fr;
   min-height: 100vh;
-  gap: 0;
 }
 
 .dashboard .topbar {
-  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 2rem;
@@ -1169,10 +1164,6 @@ code {
 
   .card-chart {
     overflow-x: auto;
-  }
-
-  .dashboard {
-    grid-template-columns: 1fr;
   }
 
   .sidebar {

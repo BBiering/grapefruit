@@ -1,4 +1,3 @@
-import { useState } from "react";
 import type { CompanyCard as CompanyCardType } from "../types";
 import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
 import { MiniChart } from "./MiniChart";
@@ -20,16 +19,12 @@ function impactText(impact: number | null) {
 }
 
 export function CompanyCard({ company }: Props) {
-  const [expanded, setExpanded] = useState(false);
   const pc = company.past_catalyst;
   const predictedEvents = company.predicted_catalysts;
   const predicted = company.predicted_catalyst;
 
   return (
-    <div
-      className={`card company-card-full ${expanded ? "expanded" : ""}`}
-      onClick={() => setExpanded(!expanded)}
-    >
+    <div className="card company-card-full expanded">
       <div className="card-top">
         <div className="card-chart">
           <MiniChart
@@ -68,12 +63,10 @@ export function CompanyCard({ company }: Props) {
             <div className="catalyst-line muted">No catalysts detected</div>
           )}
 
-          <div className="expand-hint">{expanded ? "▲ collapse" : "▼ expand timeline and details"}</div>
         </div>
       </div>
 
-      {expanded && (
-        <div className="card-detail">
+      <div className="card-detail">
           <h4 className="timeline-title">Catalyst timeline</h4>
           <div className="timeline">
             {predictedEvents.map((event) => (
@@ -123,7 +116,6 @@ export function CompanyCard({ company }: Props) {
             {!predictedEvents.length && !pc && <p className="muted">No catalyst events recorded.</p>}
           </div>
         </div>
-      )}
     </div>
   );
 }
