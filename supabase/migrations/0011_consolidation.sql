@@ -51,4 +51,10 @@ ALTER TABLE step_change_history
 CREATE INDEX IF NOT EXISTS idx_forward_catalysts_confidence
     ON forward_catalysts(confidence);
 
+-- The SPA reads through Supabase's publishable/anon key.
+ALTER TABLE forward_catalysts ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS anon_read ON forward_catalysts;
+CREATE POLICY anon_read ON forward_catalysts FOR SELECT TO anon USING (true);
+GRANT SELECT ON forward_catalysts TO anon, authenticated;
+
 COMMIT;

@@ -65,12 +65,14 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
   }
 
   // 5. Future catalysts: forward_catalysts WHERE detected=true
-  const { data: forwardData } = await supabase
+  const { data: forwardData, error: forwardError } = await supabase
     .from("forward_catalysts")
     .select("symbol, detected, event_name, expected_window, impact_type, strategic_summary, source_url, confidence, expected_impact_pct")
     .eq("detected", true)
     .in("symbol", symbols.slice(0, 500))
     .order("confidence", { ascending: true }); // high first
+
+  if (forwardError) throw forwardError;
 
   const forwardBySymbol = new Map<string, any>();
   if (forwardData) {
