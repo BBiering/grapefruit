@@ -103,9 +103,14 @@ def scan_catalyst(
     sector_str = sector or "Unknown"
 
     # --- Step 1: retrieve evidence -------------------------------------------------
+    # Biotech-specific: focus on clinical trials and drug-approval milestones in
+    # France/EU (EMA/CHMP, ANSM) and the US (FDA). Country-specific news plus
+    # regulatory announcements drive these moves; ordinary earnings rarely do.
     query = (
-        f"{label} upcoming catalyst events scheduled next 3 months: "
-        f"FDA/EMA decisions, clinical trial readouts, earnings dates, spin-offs. "
+        f"{label} biotech upcoming catalyst events next 3 months: "
+        f"EMA CHMP opinion dates, European Commission decisions, Phase 2b/3 topline "
+        f"readouts, FDA PDUFA target dates, FDA advisory committee votes, MAA/NDA "
+        f"submissions, clinical trial data presentations. Exclude routine quarterly earnings. "
         f"Sector: {sector_str}, price ~{price_str}."
     )
     results = web_search(query, max_results=8, country="FR")
@@ -121,13 +126,16 @@ def scan_catalyst(
     )
 
     user_msg = (
-        "You are an institutional research analyst. Based ONLY on the web search "
-        "results below, identify SPECIFIC upcoming catalyst events in the next "
-        "3 months for the European stock "
+        "You are an institutional biotech research analyst. Based ONLY on the web "
+        "search results below, identify SPECIFIC upcoming catalyst events in the "
+        "next 3 months for this biotech stock "
         f"'{label}' (sector: {sector_str}, price ~{price_str}).\n\n"
-        "Focus on scheduled events with a date or narrow window: FDA/EMA decisions, "
-        "clinical trial readouts, earnings dates, spin-offs, major contract decisions. "
-        "Ignore historical news.\n\n"
+        "Focus on scheduled, dateable drug-development catalysts that are often "
+        "predictable in advance and can drive structural repricing: EMA CHMP opinion "
+        "dates, European Commission decisions, Phase 2b/3 topline readouts, FDA PDUFA "
+        "target dates, FDA advisory committee (AdCom) votes, MAA/NDA submissions, and "
+        "clinical conference data presentations. EXCLUDE routine quarterly earnings, "
+        "dividends, stock splits, and other non-drug catalysts. Ignore historical news.\n\n"
         "Search results:\n"
         f"{context}\n\n"
         "Return a JSON object with exactly these keys:\n"
@@ -135,7 +143,7 @@ def scan_catalyst(
         '  "catalyst_detected": true or false,\n'
         '  "event_name": "specific event name or empty string",\n'
         '  "event_date": "YYYY-MM-DD or empty if not known",\n'
-        '  "impact_type": "Earnings | Regulatory | Clinical Trial | Spin-off | Contract | Other",\n'
+        '  "impact_type": "FDA Decision | EMA Decision | Phase 2 Readout | Phase 3 Readout | Conference Data | Drug Approval | Other",\n'
         '  "expected_impact_pct": number (estimated price change %, e.g. 15.0 for +15%),\n'
         '  "confidence": "high" | "medium" | "low",\n'
         '  "strategic_summary": "1-2 sentences on the catalyst and potential impact",\n'

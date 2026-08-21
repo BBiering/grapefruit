@@ -696,3 +696,31 @@ def cleanup_symbols_by_exchange(exchange: str) -> dict[str, int]:
             cur.execute("DELETE FROM assets WHERE symbol LIKE %s", [pattern])
             assets_deleted = cur.rowcount
     return {"assets": assets_deleted, "bars": bars_deleted}
+
+
+def cleanup_non_biotech() -> dict[str, int]:
+    """Delete symbols whose industry is known and not Biotechnology.
+
+    Called after refresh_sectors so the universe stays biotech-only. Symbols
+    with a still-null industry are kept (they may resolve next run). Returns
+    counts of deleted rows per table."""
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM bars
+                WHERE symbol IN (
+                    SELECT symbol FROM assets
+                    WHERE industry IS NOT NULL AND industry != '' AND industry != 'Biotechnology'
+                )
+                """
+            )
+            bars_deleted = cur.rowcount
+            cur.execute(
+                """
+                DELETE FROM assets
+                WHERE industry IS NOT NULL AND industry != '' AND industry != 'Biotechnology'
+                """
+            )
+            assets_deleted = cur.rowcount
+    return {"assets": assets_deleted, "bars": bars_deleted}

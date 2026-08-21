@@ -1,8 +1,9 @@
-"""Weekly: scan every symbol's cached bars and detect 5x+ step changes.
+"""Weekly: scan every symbol's cached bars and detect 2x+ step changes.
 
-Finds every event where price rose >= 5x in <= 10 consecutive bars, the peak
-held >= 70% for 30 calendar days, and the peak was >= 1.5x the 180-day high
-before the trough. Stores in step_change_history with tier='major'.
+Finds every event where price rose >= 2x in 1 to 65 consecutive bars (up to
+3 months), the peak held >= 70% for 30 calendar days, and the peak was
+>= 1.3x the 180-day high before the trough. Stores in step_change_history
+with tier='major'.
 """
 from __future__ import annotations
 
@@ -15,11 +16,11 @@ log = logging.getLogger(__name__)
 
 
 def run() -> int:
-    """Detect 5x+ step changes for all symbols with bars data."""
+    """Detect 2x+ step changes for all symbols with bars data."""
     symbols = storage.symbols_with_bars()
     total = 0
 
-    log.info("scanning %d symbols for 5x+ step changes", len(symbols))
+    log.info("scanning %d symbols for 2x+ step changes", len(symbols))
 
     for i, symbol in enumerate(symbols, start=1):
         df = storage.load_symbol(symbol)
@@ -33,10 +34,11 @@ def run() -> int:
             symbol,
             closes,
             dates,
-            min_multiplier=5.0,
-            max_days=10,
+            min_multiplier=2.0,
+            max_days=65,
             post_peak_retention_min=0.70,
-            breakout_vs_prior_high_min=1.5,
+            breakout_vs_prior_high_min=1.3,
+            max_trough_price=1e9,  # price ceiling is enforced at universe level (<€100)
         )
 
         if not detected:

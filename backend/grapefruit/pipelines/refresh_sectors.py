@@ -48,5 +48,12 @@ def run() -> int:
         if updated % 50 == 0:
             log.info("backfilled sector for %d/%d", updated, len(symbols))
 
+    # Biotech-only universe: drop any stock whose industry resolved to something
+    # other than Biotechnology. Symbols with unknown industry are kept pending
+    # re-resolution on a later run.
+    counts = storage.cleanup_non_biotech()
+    if counts["assets"]:
+        log.info("pruned %d non-biotech symbols (%d bar rows)", counts["assets"], counts["bars"])
+
     log.info("refresh_sectors done: %d/%d symbols updated", updated, len(symbols))
     return updated
