@@ -786,9 +786,17 @@ code {
   overflow-y: auto;
 }
 
+.timeline-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
 .timeline-title {
   font-size: 1rem;
-  margin: 0 0 1rem;
+  margin: 0;
 }
 
 .timeline {

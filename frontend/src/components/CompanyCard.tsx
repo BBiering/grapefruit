@@ -50,13 +50,6 @@ export function CompanyCard({ company }: Props) {
             {formatPrice(company.last_close)} / {formatMoney(company.market_cap_usd)}
           </div>
 
-          <button
-            className="chat-open-btn"
-            onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
-          >
-            💬 Ask Perplexity
-          </button>
-
           {pc && (
             <div className="catalyst-line past">
               <strong>Past catalyst:</strong> {pc.date} | ×{pc.multiplier.toFixed(1)} | {pc.reason}
@@ -78,7 +71,15 @@ export function CompanyCard({ company }: Props) {
       </div>
 
       <div className="card-detail">
-          <h4 className="timeline-title">Catalyst timeline</h4>
+          <div className="timeline-title-row">
+            <h4 className="timeline-title">Catalyst timeline</h4>
+            <button
+              className="chat-open-btn"
+              onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
+            >
+              💬 Ask Perplexity
+            </button>
+          </div>
           <div className="timeline">
             {predictedEvents.map((event) => (
               <div className="timeline-item predicted" key={event.id}>
