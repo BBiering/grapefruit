@@ -1,6 +1,8 @@
+import { useState } from "react";
 import type { CompanyCard as CompanyCardType } from "../types";
 import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
 import { MiniChart } from "./MiniChart";
+import { CompanyChat } from "./CompanyChat";
 
 interface Props {
   company: CompanyCardType;
@@ -19,6 +21,7 @@ function impactText(impact: number | null) {
 }
 
 export function CompanyCard({ company }: Props) {
+  const [chatOpen, setChatOpen] = useState(false);
   const pc = company.past_catalyst;
   const predictedEvents = company.predicted_catalysts;
   const predicted = company.predicted_catalyst;
@@ -45,6 +48,13 @@ export function CompanyCard({ company }: Props) {
           <div className="card-price">
             {formatPrice(company.last_close)} / {formatMoney(company.market_cap_usd)}
           </div>
+
+          <button
+            className="chat-open-btn"
+            onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
+          >
+            💬 Ask Perplexity
+          </button>
 
           {pc && (
             <div className="catalyst-line past">
@@ -116,6 +126,10 @@ export function CompanyCard({ company }: Props) {
             {!predictedEvents.length && !pc && <p className="muted">No catalyst events recorded.</p>}
           </div>
         </div>
+
+      {chatOpen && (
+        <CompanyChat company={company} onClose={() => setChatOpen(false)} />
+      )}
     </div>
   );
 }

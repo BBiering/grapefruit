@@ -1,4 +1,4 @@
-"""Weekly: build the universe of small/mid-cap common stocks on Euronext Paris.
+"""Weekly: build the universe of Biotech common stocks on Euronext Paris.
 
 Targets Euronext Paris main market + Euronext Growth (AL-prefix), excludes
 Euronext Access (ML-prefix). Other EU exchanges (XETRA, LSE, HE, ST, CO, OL)
@@ -7,8 +7,11 @@ are disabled until verified.
 For each exchange we pull EODHD's bulk last-day "extended" feed (one HTTP call per
 exchange) which carries, per symbol, the name/type and market cap in the exchange's
 local currency. We convert market cap to USD via the FOREX endpoint, keep only common
-stocks in the small/mid-cap band ($10M–$10B), filter out Euronext Access (ML) tickers,
-and upsert into `assets` keyed by the full EODHD ticker (e.g. "LVMH.PA").
+stocks priced under $100/€100 in their native currency, filter out Euronext Access
+(ML) tickers, and upsert into `assets` keyed by the full EODHD ticker (e.g. "LVMH.PA").
+
+The final Biotech-only filter is applied by refresh_sectors — after industry data is
+populated, non-Biotechnology stocks are dropped from the universe.
 
 Also cleans up any stale US symbols left over from a prior universe build.
 """
@@ -22,11 +25,9 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-# Market cap band applied in the exchange's NATIVE currency before USD
-# conversion, so the universe is stable regardless of EUR/USD fluctuations.
-# $10M floor catches Euronext Growth; ~$10B ceiling excludes mega-caps.
-NATIVE_MARKET_CAP_MIN = 10e6   # ~$10M
-NATIVE_MARKET_CAP_MAX = 9e9    # ~€9B / ~$10.4B at EUR/USD 1.16
+# Max price in the exchange's NATIVE currency (EUR for PA).
+# $100/€100 ceiling for ten-bagger hunting — no market-cap floor.
+MAX_NATIVE_PRICE = 100.0
 
 # Ticker prefixes for Euronext segments on the PA exchange.
 # AL* = Euronext Growth (formerly Alternext) — include.
@@ -58,6 +59,7 @@ def run() -> int:
         raw = eodhd_client.fetch_bulk_extended(exchange)
         kept = 0
         excluded_ml = 0
+        excluded_price = 0
         for r in raw:
             code = r.get("code") or r.get("Code")
             if not code or code not in native:
@@ -75,12 +77,15 @@ def run() -> int:
             if isin and isin in seen_isins:
                 continue
 
+            # Price filter: must have a positive close under $100/€100 in native currency.
+            close = r.get("close") or r.get("adjusted_close")
+            if not isinstance(close, (int, float)) or close <= 0 or close > MAX_NATIVE_PRICE:
+                excluded_price += 1
+                continue
+
+            # Market cap in USD (for display only — no filter applied).
             raw_cap = r.get("MarketCapitalization") or r.get("market_capitalization")
-            if not isinstance(raw_cap, (int, float)) or raw_cap <= 0:
-                continue
-            if not (NATIVE_MARKET_CAP_MIN <= raw_cap <= NATIVE_MARKET_CAP_MAX):
-                continue
-            cap_usd = float(raw_cap) * fx
+            cap_usd = float(raw_cap) * fx if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
 
             if isin:
                 seen_isins.add(isin)
@@ -96,8 +101,8 @@ def run() -> int:
                 }
             )
             kept += 1
-        log.info("%s: %d native commons, %d bulk rows -> %d kept, %d ML excluded (fx %s=%.4f)",
-                 exchange, len(native), len(raw), kept, excluded_ml, currency, fx)
+        log.info("%s: %d native commons, %d bulk rows -> %d kept, %d ML excluded, %d price excluded (fx %s=%.4f)",
+                 exchange, len(native), len(raw), kept, excluded_ml, excluded_price, currency, fx)
 
     # Clean up stale US symbols from a prior universe build.
     _cleanup_us_symbols()
@@ -110,8 +115,7 @@ def run() -> int:
             "symbols": symbols,
             "count": len(symbols),
             "exchanges": eodhd_client.EXCHANGES,
-            "native_market_cap_min": NATIVE_MARKET_CAP_MIN,
-            "native_market_cap_max": NATIVE_MARKET_CAP_MAX,
+            "max_native_price": MAX_NATIVE_PRICE,
             "refreshed_at": now.isoformat(),
         },
     )
