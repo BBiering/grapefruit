@@ -12,6 +12,104 @@ interface Message {
   text: string;
 }
 
+// Minimal, safe Markdown → React renderer (no external dependency). Handles the
+// common shapes Perplexity returns: headings, bold/italic, inline & fenced code,
+// links, bullet/numbered lists, and paragraph breaks.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function inlineMarkdown(line: string): string {
+  // [text](url) → link (http/https only, target blank)
+  line = line.replace(
+    /\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g,
+    (_, label, url) =>
+      `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`,
+  );
+  // `code`
+  line = line.replace(/`([^`]+)`/g, (_, code) => `<code>${escapeHtml(code)}</code>`);
+  // **bold**
+  line = line.replace(/\*\*([^*]+)\*\*/g, (_, text) => `<strong>${escapeHtml(text)}</strong>`);
+  // *italic*
+  line = line.replace(/\*([^*]+)\*/g, (_, text) => `<em>${escapeHtml(text)}</em>`);
+  return line;
+}
+
+function renderMarkdown(value: string): React.ReactNode {
+  const blocks: React.ReactNode[] = [];
+  const lines = value.split(/\n+/);
+  let listType: "ul" | "ol" | null = null;
+  let listItems: string[] = [];
+  let inCode = false;
+  let codeLines: string[] = [];
+
+  const flushList = () => {
+    if (listType && listItems.length) {
+      const Tag = listType;
+      blocks.push(<Tag key={blocks.length}>{listItems.map((item, j) => <li key={j} dangerouslySetInnerHTML={{ __html: inlineMarkdown(item) }} />)}</Tag>);
+      listItems = [];
+    }
+    listType = null;
+  };
+
+  for (const rawLine of lines) {
+    const line = rawLine.trim();
+
+    if (line.startsWith("```")) {
+      if (inCode) {
+        blocks.push(<pre key={blocks.length}><code>{codeLines.join("\n")}</code></pre>);
+        codeLines = [];
+        inCode = false;
+      } else {
+        flushList();
+        inCode = true;
+      }
+      continue;
+    }
+    if (inCode) {
+      codeLines.push(rawLine);
+      continue;
+    }
+
+    if (/^#{1,3}\s/.test(line)) {
+      flushList();
+      const level = line.match(/^(#{1,3})\s/)?.[1].length ?? 2;
+      const text = line.replace(/^#{1,3}\s/, "");
+      blocks.push(
+        <p key={blocks.length} className={`md-h${level}`} dangerouslySetInnerHTML={{ __html: inlineMarkdown(text) }} />,
+      );
+      continue;
+    }
+
+    if (/^[-*]\s/.test(line)) {
+      if (listType !== "ul") { flushList(); listType = "ul"; }
+      listItems.push(line.replace(/^[-*]\s/, ""));
+      continue;
+    }
+    if (/^\d+\.\s/.test(line)) {
+      if (listType !== "ol") { flushList(); listType = "ol"; }
+      listItems.push(line.replace(/^\d+\.\s/, ""));
+      continue;
+    }
+
+    flushList();
+    if (line) {
+      blocks.push(<p key={blocks.length} dangerouslySetInnerHTML={{ __html: inlineMarkdown(line) }} />);
+    }
+  }
+
+  flushList();
+  if (inCode) {
+    blocks.push(<pre key={blocks.length}><code>{codeLines.join("\n")}</code></pre>);
+  }
+  return blocks;
+}
+
 function buildContext(company: CompanyCardType): string {
   const pc = company.past_catalyst;
   const lines: string[] = [
@@ -97,7 +195,7 @@ export function CompanyChat({ company, onClose }: Props) {
           )}
           {messages.map((msg, i) => (
             <div key={i} className={`chat-msg ${msg.role}`}>
-              {msg.text}
+              {msg.role === "assistant" ? renderMarkdown(msg.text) : msg.text}
             </div>
           ))}
           {loading && <div className="chat-msg assistant chat-typing">…</div>}

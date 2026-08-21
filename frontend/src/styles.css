@@ -1158,6 +1158,68 @@ code {
   font-style: italic;
 }
 
+/* Markdown-rendered content inside assistant messages. */
+.chat-msg p {
+  margin: 0 0 0.5rem;
+}
+
+.chat-msg p:last-child {
+  margin-bottom: 0;
+}
+
+.chat-msg .md-h1,
+.chat-msg .md-h2,
+.chat-msg .md-h3 {
+  font-weight: 700;
+  margin: 0.5rem 0 0.25rem;
+}
+
+.chat-msg .md-h1 { font-size: 1.05rem; }
+.chat-msg .md-h2 { font-size: 1rem; }
+.chat-msg .md-h3 { font-size: 0.95rem; }
+
+.chat-msg code {
+  background: rgba(107, 102, 97, 0.14);
+  border-radius: 4px;
+  padding: 0.1rem 0.3rem;
+  font-size: 0.85em;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.chat-msg pre {
+  background: rgba(28, 26, 24, 0.06);
+  border-radius: 8px;
+  padding: 0.75rem;
+  overflow-x: auto;
+  font-size: 0.82rem;
+}
+
+.chat-msg pre code {
+  background: none;
+  padding: 0;
+}
+
+.chat-msg ul,
+.chat-msg ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.25rem;
+}
+
+.chat-msg ul:last-child,
+.chat-msg ol:last-child {
+  margin-bottom: 0;
+}
+
+.chat-msg li {
+  margin-bottom: 0.2rem;
+}
+
+.chat-msg a {
+  color: var(--accent);
+  text-decoration: underline;
+  word-break: break-all;
+}
+
 .chat-error {
   color: #bf4f4f;
   font-size: 0.85rem;

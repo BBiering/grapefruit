@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import type { CompanyCard as CompanyCardType } from "../types";
 import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
 import { MiniChart } from "./MiniChart";
@@ -127,9 +128,11 @@ export function CompanyCard({ company }: Props) {
           </div>
         </div>
 
-      {chatOpen && (
-        <CompanyChat company={company} onClose={() => setChatOpen(false)} />
-      )}
+      {chatOpen &&
+        createPortal(
+          <CompanyChat company={company} onClose={() => setChatOpen(false)} />,
+          document.body,
+        )}
     </div>
   );
 }
