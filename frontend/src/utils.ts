@@ -33,3 +33,20 @@ export function exchangeToFlag(exchange: string | null | undefined): string {
   if (!exchange) return "";
   return EXCHANGE_FLAGS[exchange] || exchange;
 }
+
+// Map EODHD exchange suffix to a country name for filtering.
+const EXCHANGE_COUNTRIES: Record<string, string> = {
+  US: "United States",
+  PA: "France",
+  XETRA: "Germany",
+  LSE: "United Kingdom",
+  HE: "Finland",
+  ST: "Sweden",
+  CO: "Denmark",
+  OL: "Norway",
+};
+
+export function exchangeToCountry(exchange: string | null | undefined): string | null {
+  if (!exchange) return null;
+  return EXCHANGE_COUNTRIES[exchange] || exchange;
+}

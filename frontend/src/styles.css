@@ -618,16 +618,18 @@ code {
   gap: 1rem;
 }
 
-/* Search bar (replaces the performance panel). */
+/* Search bar + country filter (replaced the performance panel). */
 .search-bar {
   width: 80%;
   max-width: 1600px;
   margin: 1rem auto 0;
   padding: 0 2rem;
+  display: flex;
+  gap: 0.75rem;
 }
 
 .search-bar input {
-  width: 100%;
+  flex: 1;
   padding: 0.75rem 1.25rem;
   font-size: 1rem;
   border: 1px solid var(--border-strong);
@@ -645,12 +647,30 @@ code {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
-/* Full-width company card: fixed height capped at ~70% of the viewport. */
+.search-bar select {
+  flex-shrink: 0;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.search-bar select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Full-width company card: grows with content, capped at ~70% of the viewport. */
 .company-card-full {
   cursor: pointer;
   transition: box-shadow 0.2s;
   padding: 1.25rem;
-  height: 70vh;
   max-height: 70vh;
   display: flex;
   flex-direction: column;
@@ -675,7 +695,6 @@ code {
   flex: 0 1 560px;
   min-width: 0;
   width: 560px;
-  overflow-x: auto;
 }
 
 .chart-frame {
@@ -1204,10 +1223,6 @@ code {
   .card-chart,
   .chart-frame {
     width: 100%;
-  }
-
-  .card-chart {
-    overflow-x: auto;
   }
 
   .sidebar {

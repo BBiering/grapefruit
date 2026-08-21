@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useCompanies } from "../hooks/useCompanies";
 import { CompanyCard } from "../components/CompanyCard";
+import { exchangeToCountry } from "../utils";
 
 type SortBy = "past" | "future";
 
@@ -16,6 +17,7 @@ export function Dashboard() {
   // const [sector, setSector] = useState("all");
   // const [industry, setIndustry] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [country, setCountry] = useState("all");
 
   const { data: companies = [], isLoading } = useCompanies();
   // Commented out: high-level metrics are not displayed at the moment.
@@ -42,16 +44,29 @@ export function Dashboard() {
     return copy;
   }, [companies, sortBy]);
 
-  // Search by company name or ticker.
+  // Distinct countries present in the data (from the exchange field).
+  const countries = useMemo(
+    () =>
+      [...new Set(companies.map((c) => exchangeToCountry(c.exchange)).filter((v): v is string => Boolean(v)))].sort(),
+    [companies],
+  );
+
+  // Search by company name or ticker, plus country filter.
   const visible = useMemo(() => {
-    if (!searchTerm.trim()) return sorted;
-    const term = searchTerm.trim().toLowerCase();
-    return sorted.filter(
-      (company) =>
-        company.name.toLowerCase().includes(term) ||
-        company.symbol.toLowerCase().includes(term),
-    );
-  }, [sorted, searchTerm]);
+    let result = sorted.filter((company) => {
+      if (country !== "all" && exchangeToCountry(company.exchange) !== country) return false;
+      return true;
+    });
+    if (searchTerm.trim()) {
+      const term = searchTerm.trim().toLowerCase();
+      result = result.filter(
+        (company) =>
+          company.name.toLowerCase().includes(term) ||
+          company.symbol.toLowerCase().includes(term),
+      );
+    }
+    return result;
+  }, [sorted, searchTerm, country]);
 
   return (
     <div className="dashboard">
@@ -62,7 +77,7 @@ export function Dashboard() {
         </div>
       </header>
 
-      {/* Search bar replaced the high-level stats area. */}
+      {/* Search + country filter (replaced the high-level stats area). */}
       <div className="search-bar">
         <input
           type="search"
@@ -71,6 +86,16 @@ export function Dashboard() {
           onChange={(event) => setSearchTerm(event.target.value)}
           aria-label="Search companies"
         />
+        <select
+          value={country}
+          onChange={(event) => setCountry(event.target.value)}
+          aria-label="Filter by country"
+        >
+          <option value="all">All countries</option>
+          {countries.map((value) => (
+            <option key={value} value={value}>{value}</option>
+          ))}
+        </select>
       </div>
 
       <main className="card-list">
