@@ -1,35 +1,33 @@
 import { useMemo, useState } from "react";
-import { useCompanies, usePredictionPerformance } from "../hooks/useCompanies";
+import { useCompanies } from "../hooks/useCompanies";
 import { CompanyCard } from "../components/CompanyCard";
 
 type SortBy = "past" | "future";
 
+/*
 function pct(value: number | null) {
   return value == null ? "—" : `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
+*/
 
 export function Dashboard() {
   const [sortBy, setSortBy] = useState<SortBy>("future");
-  const [sector, setSector] = useState("all");
-  const [industry, setIndustry] = useState("all");
+  // Commented out: sector/industry filters are disabled for now.
+  // const [sector, setSector] = useState("all");
+  // const [industry, setIndustry] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const { data: companies = [], isLoading } = useCompanies();
-  const { data: performance } = usePredictionPerformance();
+  // Commented out: high-level metrics are not displayed at the moment.
+  // const { data: performance } = usePredictionPerformance();
 
-  const sectors = useMemo(
-    () => [...new Set(companies.map((company) => company.sector).filter((value) => value !== "Unknown"))].sort(),
-    [companies],
-  );
-  const industries = useMemo(
-    () => [...new Set(companies.map((company) => company.industry).filter((value) => value !== "Unknown"))].sort(),
-    [companies],
-  );
+  // Commented out: sector/industry option lists retained for future use.
+  // const sectors = useMemo(...);
+  // const industries = useMemo(...);
 
   const sorted = useMemo(() => {
-    const copy = companies.filter((company) =>
-      (sector === "all" || company.sector === sector) &&
-      (industry === "all" || company.industry === industry),
-    );
+    // Commented out: sector/industry filtering disabled.
+    const copy = companies;
     if (sortBy === "past") {
       copy.sort((a, b) => (b.past_catalyst?.multiplier ?? 0) - (a.past_catalyst?.multiplier ?? 0));
     } else {
@@ -42,7 +40,18 @@ export function Dashboard() {
       });
     }
     return copy;
-  }, [companies, sortBy, sector, industry]);
+  }, [companies, sortBy]);
+
+  // Search by company name or ticker.
+  const visible = useMemo(() => {
+    if (!searchTerm.trim()) return sorted;
+    const term = searchTerm.trim().toLowerCase();
+    return sorted.filter(
+      (company) =>
+        company.name.toLowerCase().includes(term) ||
+        company.symbol.toLowerCase().includes(term),
+    );
+  }, [sorted, searchTerm]);
 
   return (
     <div className="dashboard">
@@ -51,41 +60,26 @@ export function Dashboard() {
           <span className="brand-icon">🍊</span>
           <h1 className="brand-name">Grapefruit</h1>
         </div>
-        <div className="dashboard-controls">
-          <select value={sector} onChange={(e) => setSector(e.target.value)} aria-label="Filter by sector">
-            <option value="all">All sectors</option>
-            {sectors.map((value) => <option key={value}>{value}</option>)}
-          </select>
-          <select value={industry} onChange={(e) => setIndustry(e.target.value)} aria-label="Filter by industry">
-            <option value="all">All industries</option>
-            {industries.map((value) => <option key={value}>{value}</option>)}
-          </select>
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value as SortBy)} aria-label="Sort companies">
-            <option value="future">Sort: Predicted catalysts</option>
-            <option value="past">Sort: Past catalysts</option>
-          </select>
-        </div>
       </header>
 
-      {performance && (
-        <section className="performance-panel" aria-label="Prediction performance">
-          <div><strong>{performance.total}</strong><span>predictions</span></div>
-          <div><strong>{performance.pending}</strong><span>pending review</span></div>
-          <div><strong>{performance.occurred}</strong><span>occurred</span></div>
-          <div><strong>{performance.missed}</strong><span>missed</span></div>
-          <div><strong>{performance.hit_rate == null ? "—" : `${(performance.hit_rate * 100).toFixed(0)}%`}</strong><span>hit rate</span></div>
-          <div><strong>{pct(performance.average_actual_pct)}</strong><span>avg actual move</span></div>
-          <div><strong>{pct(performance.average_expected_pct)}</strong><span>avg expected move</span></div>
-        </section>
-      )}
+      {/* Search bar replaced the high-level stats area. */}
+      <div className="search-bar">
+        <input
+          type="search"
+          placeholder="Search by company name or ticker…"
+          value={searchTerm}
+          onChange={(event) => setSearchTerm(event.target.value)}
+          aria-label="Search companies"
+        />
+      </div>
 
       <main className="card-list">
         {isLoading ? (
           <div className="loading">Loading companies...</div>
-        ) : sorted.length === 0 ? (
-          <div className="loading">No companies match these filters</div>
+        ) : visible.length === 0 ? (
+          <div className="loading">No companies match your search</div>
         ) : (
-          sorted.map((company) => <CompanyCard key={company.symbol} company={company} />)
+          visible.map((company) => <CompanyCard key={company.symbol} company={company} />)
         )}
       </main>
     </div>

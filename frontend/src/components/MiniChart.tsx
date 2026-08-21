@@ -79,10 +79,6 @@ export function MiniChart({ symbol, pastEvent, predictedDates = [] }: MiniChartP
           isAnimationActive={false}
         />
       </LineChart>
-      <div className="chart-legend">
-        <span className="legend-past">━ Past catalyst</span>
-        <span className="legend-predicted">┆ Predicted catalyst</span>
-      </div>
     </div>
   );
 }

@@ -618,11 +618,43 @@ code {
   gap: 1rem;
 }
 
-/* Full-width company card */
+/* Search bar (replaces the performance panel). */
+.search-bar {
+  width: 80%;
+  max-width: 1600px;
+  margin: 1rem auto 0;
+  padding: 0 2rem;
+}
+
+.search-bar input {
+  width: 100%;
+  padding: 0.75rem 1.25rem;
+  font-size: 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.search-bar input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* Full-width company card: fixed height capped at ~70% of the viewport. */
 .company-card-full {
   cursor: pointer;
   transition: box-shadow 0.2s;
   padding: 1.25rem;
+  height: 70vh;
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .company-card-full:hover {
@@ -724,11 +756,15 @@ code {
   user-select: none;
 }
 
-/* Expanded detail */
+/* Expanded detail: the catalyst timeline scrolls vertically inside the
+   fixed-height card so the top of the next card stays visible. */
 .card-detail {
   margin-top: 1rem;
   padding-top: 1rem;
   border-top: 1px solid rgba(107, 102, 97, 0.15);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .timeline-title {
@@ -1151,6 +1187,7 @@ code {
 /* Responsive */
 @media (max-width: 900px) {
   .performance-panel,
+  .search-bar,
   .card-list {
     width: 100%;
   }
