@@ -1090,6 +1090,7 @@ code {
   justify-content: space-between;
   padding: 1rem 1.25rem;
   border-bottom: 1px solid rgba(107, 102, 97, 0.15);
+  flex-shrink: 0;
 }
 
 .chat-header h4 {
@@ -1114,6 +1115,7 @@ code {
 
 .chat-list {
   flex: 1;
+  min-height: 0;   /* allow shrinking so the input row stays visible */
   overflow-y: auto;
   padding: 1rem 1.25rem;
   display: flex;
@@ -1166,6 +1168,7 @@ code {
   gap: 0.5rem;
   padding: 0.9rem 1.25rem;
   border-top: 1px solid rgba(107, 102, 97, 0.15);
+  flex-shrink: 0;
 }
 
 .chat-input-row input {
