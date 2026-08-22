@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { LineChart, Line, ReferenceLine, ReferenceArea, XAxis, YAxis, Tooltip } from "recharts";
+import { LineChart, Line, ReferenceLine, ReferenceArea, ResponsiveContainer, XAxis, YAxis, Tooltip } from "recharts";
 import { supabase } from "../supabase";
 
 interface Bar {
@@ -40,7 +40,8 @@ export function MiniChart({ symbol, pastEvent }: MiniChartProps) {
 
   return (
     <div className="chart-frame">
-      <LineChart width={560} height={240} data={bars} margin={{ top: 8, right: 18, bottom: 8, left: 8 }}>
+      <ResponsiveContainer width="100%" height={240}>
+      <LineChart data={bars} margin={{ top: 8, right: 18, bottom: 8, left: 8 }}>
         <XAxis dataKey="ts" tick={{ fontSize: 10 }} minTickGap={45} tickFormatter={(value) => String(value).slice(0, 7)} />
         <YAxis width={48} tick={{ fontSize: 10 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
         <Tooltip
@@ -68,6 +69,7 @@ export function MiniChart({ symbol, pastEvent }: MiniChartProps) {
           isAnimationActive={false}
         />
       </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }
