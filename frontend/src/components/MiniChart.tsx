@@ -10,7 +10,6 @@ interface Bar {
 interface MiniChartProps {
   symbol: string;
   pastEvent?: { start_ts: string; end_ts: string };
-  predictedDates?: string[];
 }
 
 async function fetchBars(symbol: string): Promise<Bar[]> {
@@ -28,7 +27,7 @@ async function fetchBars(symbol: string): Promise<Bar[]> {
   return (data ?? []) as Bar[];
 }
 
-export function MiniChart({ symbol, pastEvent, predictedDates = [] }: MiniChartProps) {
+export function MiniChart({ symbol, pastEvent }: MiniChartProps) {
   const { data: bars = [] } = useQuery({
     queryKey: ["bars-mini", symbol],
     queryFn: () => fetchBars(symbol),
@@ -39,21 +38,16 @@ export function MiniChart({ symbol, pastEvent, predictedDates = [] }: MiniChartP
     return <div className="chart-empty">No price data</div>;
   }
 
-  // Include a null future point so Recharts includes the predicted date in its x-axis domain.
-  const chartBars = [...bars];
-  for (const date of predictedDates) {
-    if (date > bars[bars.length - 1].ts && !chartBars.some((bar) => bar.ts === date)) {
-      chartBars.push({ ts: date, close: null });
-    }
-  }
-  chartBars.sort((a, b) => a.ts.localeCompare(b.ts));
-
   return (
     <div className="chart-frame">
-      <LineChart width={560} height={240} data={chartBars} margin={{ top: 8, right: 18, bottom: 8, left: 8 }}>
+      <LineChart width={560} height={240} data={bars} margin={{ top: 8, right: 18, bottom: 8, left: 8 }}>
         <XAxis dataKey="ts" tick={{ fontSize: 10 }} minTickGap={45} tickFormatter={(value) => String(value).slice(0, 7)} />
         <YAxis width={48} tick={{ fontSize: 10 }} tickFormatter={(value) => `$${Number(value).toFixed(0)}`} />
-        <Tooltip labelFormatter={(value) => `Date: ${value}`} formatter={(value) => [value == null ? "—" : `$${Number(value).toFixed(2)}`, "Close"]} />
+        <Tooltip
+          labelFormatter={(value) => `Date: ${value}`}
+          formatter={(value) => [value == null ? "—" : `$${Number(value).toFixed(2)}`, "Close"]}
+          cursor={{ stroke: "#6b6661", strokeWidth: 1, strokeDasharray: "4 3" }}
+        />
 
         {/* Retrospective event: yellow vertical markers and highlighted event window */}
         {pastEvent && (
@@ -63,11 +57,6 @@ export function MiniChart({ symbol, pastEvent, predictedDates = [] }: MiniChartP
             <ReferenceArea x1={pastEvent.start_ts} x2={pastEvent.end_ts} fill="#f4bd4c" fillOpacity={0.25} />
           </>
         )}
-
-        {/* Prediction: blue vertical dashed marker */}
-        {predictedDates.map((date) => (
-          <ReferenceLine key={date} x={date} stroke="#2879d0" strokeDasharray="6 4" strokeWidth={2} />
-        ))}
 
         <Line
           type="monotone"
