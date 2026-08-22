@@ -1066,6 +1066,14 @@ code {
   color: #fff;
 }
 
+.chat-open-btn .chat-open-logo {
+  width: 1em;
+  height: 1em;
+  vertical-align: -0.15em;
+  margin-right: 0.35rem;
+  border-radius: 2px;
+}
+
 .chat-overlay {
   position: fixed;
   inset: 0;

@@ -77,7 +77,8 @@ export function CompanyCard({ company }: Props) {
               className="chat-open-btn"
               onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
             >
-              💬 Ask Perplexity
+              <img src="/perplexity.png" alt="" className="chat-open-logo" />
+              Ask Perplexity
             </button>
           </div>
           <div className="timeline">
