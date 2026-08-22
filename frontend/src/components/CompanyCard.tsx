@@ -21,6 +21,37 @@ function impactText(impact: number | null) {
   return `Expected impact: ${impact >= 0 ? "+" : ""}${impact.toFixed(0)}% (×${multiplier.toFixed(1)}; model estimate)`;
 }
 
+/** Collapsible timeline entry: shows the heading, details on demand. */
+function TimelineItem({
+  kind,
+  date,
+  headline,
+  children,
+}: {
+  kind: "predicted" | "past";
+  date: string;
+  headline: string;
+  children: React.ReactNode;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className={`timeline-item ${kind}`}>
+      <div className="timeline-marker" />
+      <div className="timeline-content">
+        <button
+          className="timeline-heading"
+          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+          aria-expanded={expanded}
+        >
+          <span className="timeline-heading-text">{date} — {headline}</span>
+          <span className="timeline-toggle">{expanded ? "−" : "+"}</span>
+        </button>
+        {expanded && <div className="timeline-details">{children}</div>}
+      </div>
+    </div>
+  );
+}
+
 export function CompanyCard({ company }: Props) {
   const [chatOpen, setChatOpen] = useState(false);
   const pc = company.past_catalyst;
@@ -82,47 +113,44 @@ export function CompanyCard({ company }: Props) {
           </div>
           <div className="timeline">
             {predictedEvents.map((event) => (
-              <div className="timeline-item predicted" key={event.id}>
-                <div className="timeline-marker" />
-                <div>
-                  <div className="timeline-heading">
-                    {event.date || "Date unknown"} — Predicted Catalyst — {event.impact_type || event.event_name || "Other"}
-                  </div>
-                  {event.event_name && <p><strong>{event.event_name}</strong></p>}
-                  <p>{event.summary || "No detailed description available."}</p>
-                  <p>{impactText(event.impact_pct)} | Confidence: {confidenceBadge(event.confidence)} | Status: {event.outcome}</p>
-                  {event.source_url && (
-                    <p><a href={event.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>View source</a></p>
-                  )}
-                </div>
-              </div>
+              <TimelineItem
+                key={event.id}
+                kind="predicted"
+                date={event.date || "Date unknown"}
+                headline={`Predicted Catalyst — ${event.impact_type || event.event_name || "Other"}`}
+              >
+                {event.event_name && <p><strong>{event.event_name}</strong></p>}
+                <p>{event.summary || "No detailed description available."}</p>
+                <p>{impactText(event.impact_pct)} | Confidence: {confidenceBadge(event.confidence)} | Status: {event.outcome}</p>
+                {event.source_url && (
+                  <p><a href={event.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>View source</a></p>
+                )}
+              </TimelineItem>
             ))}
 
             {pc && (
-              <div className="timeline-item past">
-                <div className="timeline-marker" />
-                <div>
-                  <div className="timeline-heading">
-                    {pc.date} — Past Catalyst — {pc.headline || pc.reason}
-                  </div>
-                  <p>{pc.summary || "No detailed description available."}</p>
-                  {pc.spike_explanation && (
-                    <>
-                      <h5>Why the spike?</h5>
-                      <p>{pc.spike_explanation}</p>
-                    </>
-                  )}
-                  {pc.foreseeable_evidence && (
-                    <>
-                      <h5>Was it foreseeable?</h5>
-                      <span className={`badge ${pc.was_foreseeable ? "yes" : "no"}`}>
-                        {pc.was_foreseeable ? "Yes" : "No"}
-                      </span>
-                      <p>{pc.foreseeable_evidence}</p>
-                    </>
-                  )}
-                </div>
-              </div>
+              <TimelineItem
+                kind="past"
+                date={pc.date}
+                headline={`Past Catalyst — ${pc.headline || pc.reason}`}
+              >
+                <p>{pc.summary || "No detailed description available."}</p>
+                {pc.spike_explanation && (
+                  <>
+                    <h5>Why the spike?</h5>
+                    <p>{pc.spike_explanation}</p>
+                  </>
+                )}
+                {pc.foreseeable_evidence && (
+                  <>
+                    <h5>Was it foreseeable?</h5>
+                    <span className={`badge ${pc.was_foreseeable ? "yes" : "no"}`}>
+                      {pc.was_foreseeable ? "Yes" : "No"}
+                    </span>
+                    <p>{pc.foreseeable_evidence}</p>
+                  </>
+                )}
+              </TimelineItem>
             )}
 
             {!predictedEvents.length && !pc && <p className="muted">No catalyst events recorded.</p>}
