@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useCompanies } from "../hooks/useCompanies";
 import { CompanyCard } from "../components/CompanyCard";
-import { exchangeToCountry } from "../utils";
+import { exchangeToCountry, exchangeToFlag } from "../utils";
 
 type SortBy = "past" | "future";
 
@@ -44,12 +44,19 @@ export function Dashboard() {
     return copy;
   }, [companies, sortBy]);
 
-  // Distinct countries present in the data (from the exchange field).
-  const countries = useMemo(
-    () =>
-      [...new Set(companies.map((c) => exchangeToCountry(c.exchange)).filter((v): v is string => Boolean(v)))].sort(),
-    [companies],
-  );
+  // Distinct countries present in the data (from the exchange field), each
+  // paired with the flag of one of its exchanges for display.
+  const countries = useMemo(() => {
+    const byCountry = new Map<string, string>(); // country -> flag
+    for (const c of companies) {
+      const countryName = exchangeToCountry(c.exchange);
+      if (!countryName) continue;
+      if (!byCountry.has(countryName)) byCountry.set(countryName, exchangeToFlag(c.exchange));
+    }
+    return [...byCountry.entries()]
+      .map(([name, flag]) => ({ name, flag }))
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [companies]);
 
   // Search by company name or ticker, plus country filter.
   const visible = useMemo(() => {
@@ -91,9 +98,9 @@ export function Dashboard() {
           onChange={(event) => setCountry(event.target.value)}
           aria-label="Filter by country"
         >
-          <option value="all">All countries</option>
-          {countries.map((value) => (
-            <option key={value} value={value}>{value}</option>
+          <option value="all">🌍 All countries</option>
+          {countries.map(({ name, flag }) => (
+            <option key={name} value={name}>{flag} {name}</option>
           ))}
         </select>
       </div>
