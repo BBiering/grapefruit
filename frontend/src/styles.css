@@ -1469,6 +1469,12 @@ code {
     width: 100%;
   }
 
+  /* In the column layout flex-basis is vertical; reset it so the chart
+     container hugs the 240px graph instead of reserving 560px of height. */
+  .card-chart {
+    flex: 0 0 auto;
+  }
+
   .search-bar {
     flex-wrap: wrap;
     padding: 0 1rem;
