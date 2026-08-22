@@ -1456,6 +1456,12 @@ code {
 
   .card-top {
     flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  /* Show the company info above the graph on narrow screens. */
+  .card-info {
+    order: -1;
   }
 
   .card-chart,
