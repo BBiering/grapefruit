@@ -1478,6 +1478,13 @@ code {
 
   .company-card-full {
     padding: 0.9rem;
+    max-height: none;   /* stop clamping: stacked chart+info needs full height */
+    overflow: visible;
+  }
+
+  .card-detail {
+    flex: none;         /* let content grow; no inner scroll on mobile */
+    overflow-y: visible;
   }
 
   .sidebar {
