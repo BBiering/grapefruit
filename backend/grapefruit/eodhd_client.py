@@ -29,6 +29,7 @@ _TIMEOUT = 30.0
 # Biotech-focused universe: six European markets + potentially the US later.
 # The symbol stored everywhere is the full EODHD ticker (e.g. "LVMH.PA").
 EXCHANGES: list[str] = [
+    "US",     # United States
     "ST",     # Sweden
     "LSE",    # UK
     "PA",     # France

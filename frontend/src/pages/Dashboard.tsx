@@ -4,6 +4,7 @@ import { CompanyCard } from "../components/CompanyCard";
 import { exchangeToCountry, exchangeToFlag } from "../utils";
 
 type SortBy = "past" | "future";
+type CatalystFilter = "all" | "past" | "predicted" | "both";
 
 /*
 function pct(value: number | null) {
@@ -18,6 +19,7 @@ export function Dashboard() {
   // const [industry, setIndustry] = useState("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [country, setCountry] = useState("all");
+  const [catalystFilter, setCatalystFilter] = useState<CatalystFilter>("all");
 
   const { data: companies = [], isLoading } = useCompanies();
   // Commented out: high-level metrics are not displayed at the moment.
@@ -33,12 +35,12 @@ export function Dashboard() {
     if (sortBy === "past") {
       copy.sort((a, b) => (b.past_catalyst?.multiplier ?? 0) - (a.past_catalyst?.multiplier ?? 0));
     } else {
-      const order: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      // Predicted-first sort: biggest expected impact first; companies with
+      // no predicted catalyst sink to the bottom.
       copy.sort((a, b) => {
-        const oa = a.predicted_catalyst?.confidence ? (order[a.predicted_catalyst.confidence] ?? 3) : 3;
-        const ob = b.predicted_catalyst?.confidence ? (order[b.predicted_catalyst.confidence] ?? 3) : 3;
-        if (oa !== ob) return oa - ob;
-        return (b.predicted_catalyst?.impact_pct ?? 0) - (a.predicted_catalyst?.impact_pct ?? 0);
+        const ia = a.predicted_catalyst?.impact_pct ?? -Infinity;
+        const ib = b.predicted_catalyst?.impact_pct ?? -Infinity;
+        return ib - ia;
       });
     }
     return copy;
@@ -58,9 +60,21 @@ export function Dashboard() {
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [companies]);
 
+  // Catalyst-type filter (all / past / predicted / both).
+  const catalystFiltered = useMemo(() => {
+    if (catalystFilter === "all") return sorted;
+    return sorted.filter((company) => {
+      const hasPast = Boolean(company.past_catalyst);
+      const hasPredicted = company.predicted_catalysts.length > 0;
+      if (catalystFilter === "past") return hasPast;
+      if (catalystFilter === "predicted") return hasPredicted;
+      return hasPast || hasPredicted; // "both"
+    });
+  }, [sorted, catalystFilter]);
+
   // Search by company name or ticker, plus country filter.
   const visible = useMemo(() => {
-    let result = sorted.filter((company) => {
+    let result = catalystFiltered.filter((company) => {
       if (country !== "all" && exchangeToCountry(company.exchange) !== country) return false;
       return true;
     });
@@ -73,7 +87,7 @@ export function Dashboard() {
       );
     }
     return result;
-  }, [sorted, searchTerm, country]);
+  }, [catalystFiltered, searchTerm, country]);
 
   return (
     <div className="dashboard">
@@ -102,6 +116,16 @@ export function Dashboard() {
           {countries.map(({ name, flag }) => (
             <option key={name} value={name}>{flag} {name}</option>
           ))}
+        </select>
+        <select
+          value={catalystFilter}
+          onChange={(event) => setCatalystFilter(event.target.value as CatalystFilter)}
+          aria-label="Filter by catalyst"
+        >
+          <option value="all">All catalysts</option>
+          <option value="predicted">Predicted catalysts</option>
+          <option value="past">Past catalysts</option>
+          <option value="both">Both</option>
         </select>
       </div>
 

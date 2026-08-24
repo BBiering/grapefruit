@@ -26,8 +26,9 @@ from grapefruit import eodhd_client, storage
 log = logging.getLogger(__name__)
 
 # Price ceiling per exchange, expressed in the exchange's NATIVE currency
-# (a ~$100-equivalent for ten-bagger hunting; no market-cap floor).
+# (a ~$100-equivalent for ten-bagger hunting).
 MAX_NATIVE_PRICE: dict[str, float] = {
+    "US": 100.0,   # United States (USD)
     "ST": 950.0,   # Sweden  (SEK)
     "LSE": 80.0,   # UK      (GBP)
     "PA": 85.0,    # France  (EUR)
@@ -35,6 +36,10 @@ MAX_NATIVE_PRICE: dict[str, float] = {
     "CO": 640.0,   # Denmark (DKK)
     "XETRA": 85.0, # Germany (EUR)
 }
+
+# Minimum market cap (USD): exclude nano-caps (<$50M) and micro-caps
+# ($50M-$300M) to avoid illiquid shells. Applied to the USD-converted cap.
+MIN_MARKET_CAP_USD = 300e6
 
 # Ticker prefixes for Euronext segments on the PA exchange.
 # AL* = Euronext Growth (formerly Alternext) — include.
@@ -68,6 +73,7 @@ def run() -> int:
         kept = 0
         excluded_ml = 0
         excluded_price = 0
+        excluded_cap = 0
         for r in raw:
             code = r.get("code") or r.get("Code")
             if not code or code not in native:
@@ -91,9 +97,14 @@ def run() -> int:
                 excluded_price += 1
                 continue
 
-            # Market cap in USD (for display only — no filter applied).
+            # Market cap in USD: required and must be >= small-cap floor.
             raw_cap = r.get("MarketCapitalization") or r.get("market_capitalization")
-            cap_usd = float(raw_cap) * fx if isinstance(raw_cap, (int, float)) and raw_cap > 0 else None
+            if not isinstance(raw_cap, (int, float)) or raw_cap <= 0:
+                continue
+            cap_usd = float(raw_cap) * fx
+            if cap_usd < MIN_MARKET_CAP_USD:
+                excluded_cap += 1
+                continue
 
             if isin:
                 seen_isins.add(isin)
@@ -109,11 +120,12 @@ def run() -> int:
                 }
             )
             kept += 1
-        log.info("%s: %d native commons, %d bulk rows -> %d kept, %d ML excluded, %d price excluded (fx %s=%.4f)",
-                 exchange, len(native), len(raw), kept, excluded_ml, excluded_price, currency, fx)
+        log.info("%s: %d native commons, %d bulk rows -> %d kept, %d ML excluded, %d price excluded, %d cap excluded (fx %s=%.4f)",
+                 exchange, len(native), len(raw), kept, excluded_ml, excluded_price, excluded_cap, currency, fx)
 
-    # Clean up stale US symbols from a prior universe build.
-    _cleanup_us_symbols()
+    # Only purge stale US symbols when US is not one of the active exchanges.
+    if "US" not in eodhd_client.EXCHANGES:
+        _cleanup_us_symbols()
 
     n = storage.upsert_assets(rows)
     symbols = sorted(r["symbol"] for r in rows)

@@ -3,7 +3,7 @@ import { supabase } from "../supabase";
 import type { CompanyCard, PastCatalyst, PredictedCatalyst, PredictionPerformance } from "../types";
 
 // Must match eodhd_client.EXCHANGES in the backend.
-const ACTIVE_EXCHANGES = ["ST", "LSE", "PA", "SW", "CO", "XETRA"];
+const ACTIVE_EXCHANGES = ["US", "ST", "LSE", "PA", "SW", "CO", "XETRA"];
 
 async function fetchCompanies(): Promise<CompanyCard[]> {
   const exchangeFilter = ACTIVE_EXCHANGES.map(ex => `symbol.ilike.*.${ex}`).join(",");
