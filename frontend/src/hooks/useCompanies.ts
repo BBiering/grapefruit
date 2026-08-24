@@ -2,7 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../supabase";
 import type { CompanyCard, PastCatalyst, PredictedCatalyst, PredictionPerformance } from "../types";
 
-const ACTIVE_EXCHANGES = ["PA"];
+// Must match eodhd_client.EXCHANGES in the backend.
+const ACTIVE_EXCHANGES = ["ST", "LSE", "PA", "SW", "CO", "XETRA"];
 
 async function fetchCompanies(): Promise<CompanyCard[]> {
   const exchangeFilter = ACTIVE_EXCHANGES.map(ex => `symbol.ilike.*.${ex}`).join(",");
@@ -12,7 +13,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
     .from("assets")
     .select("symbol, name, exchange, sector, industry, market_cap_usd")
     .or(exchangeFilter)
-    .limit(800);
+    .limit(5000);
 
   if (assetsError) throw assetsError;
   if (!assetsData || assetsData.length === 0) return [];
@@ -23,9 +24,9 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
   const { data: barsData } = await supabase
     .from("bars")
     .select("symbol, close")
-    .in("symbol", symbols.slice(0, 500))
+    .in("symbol", symbols.slice(0, 5000))
     .order("ts", { ascending: false })
-    .limit(5000);
+    .limit(50000);
 
   const prices = new Map<string, number>();
   if (barsData) {
@@ -39,7 +40,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
     .from("step_change_history")
     .select("symbol, start_ts, end_ts, multiplier, trough_price, peak_price, id")
     .eq("tier", "major")
-    .in("symbol", symbols.slice(0, 500))
+    .in("symbol", symbols.slice(0, 5000))
     .order("end_ts", { ascending: false });
 
   // Dedup: keep most recent per symbol
@@ -69,7 +70,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
     .from("forward_catalysts")
     .select("id, symbol, detected, event_name, expected_window, impact_type, strategic_summary, source_url, confidence, expected_impact_pct, outcome, scanned_at")
     .eq("detected", true)
-    .in("symbol", symbols.slice(0, 500))
+    .in("symbol", symbols.slice(0, 5000))
     .order("expected_window", { ascending: false });
 
   if (forwardError) throw forwardError;
