@@ -59,7 +59,7 @@ JOB_NAMES = [
 # for manual retries; 30 minutes covers the current universe at the shared
 # Perplexity rate limit.
 TIMEOUTS = {
-    "weekly": "7200s",       # 2h
+    "weekly": "21600s",      # 6h: universe + sectors + catalysts over 6 markets
     "scan_catalysts": "3600s",          # 1h safety margin for search + extraction
     "evaluate_predictions": "1800s",    # 30m
 }
