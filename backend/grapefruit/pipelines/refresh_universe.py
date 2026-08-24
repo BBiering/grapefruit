@@ -25,9 +25,16 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-# Max price in the exchange's NATIVE currency (EUR for PA).
-# $100/€100 ceiling for ten-bagger hunting — no market-cap floor.
-MAX_NATIVE_PRICE = 100.0
+# Price ceiling per exchange, expressed in the exchange's NATIVE currency
+# (a ~$100-equivalent for ten-bagger hunting; no market-cap floor).
+MAX_NATIVE_PRICE: dict[str, float] = {
+    "ST": 950.0,   # Sweden  (SEK)
+    "LSE": 80.0,   # UK      (GBP)
+    "PA": 85.0,    # France  (EUR)
+    "SW": 80.0,    # Switzerland (CHF)
+    "CO": 640.0,   # Denmark (DKK)
+    "XETRA": 85.0, # Germany (EUR)
+}
 
 # Ticker prefixes for Euronext segments on the PA exchange.
 # AL* = Euronext Growth (formerly Alternext) — include.
@@ -49,6 +56,7 @@ def run() -> int:
     seen_isins: set[str] = set()
 
     for exchange in eodhd_client.EXCHANGES:
+        price_ceiling = MAX_NATIVE_PRICE.get(exchange, 85.0)
         currency = eodhd_client.exchange_currency(exchange)
         fx = eodhd_client.fetch_fx_rate(currency)
         if fx is None:
@@ -77,9 +85,9 @@ def run() -> int:
             if isin and isin in seen_isins:
                 continue
 
-            # Price filter: must have a positive close under $100/€100 in native currency.
+            # Price filter: positive close under the exchange's $100-equivalent ceiling.
             close = r.get("close") or r.get("adjusted_close")
-            if not isinstance(close, (int, float)) or close <= 0 or close > MAX_NATIVE_PRICE:
+            if not isinstance(close, (int, float)) or close <= 0 or close > price_ceiling:
                 excluded_price += 1
                 continue
 

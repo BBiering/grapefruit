@@ -26,6 +26,7 @@ const EXCHANGE_FLAGS: Record<string, string> = {
   HE: "🇫🇮",
   ST: "🇸🇪",
   CO: "🇩🇰",
+  SW: "🇨🇭",
   OL: "🇳🇴",
 };
 
@@ -43,6 +44,7 @@ const EXCHANGE_COUNTRIES: Record<string, string> = {
   HE: "Finland",
   ST: "Sweden",
   CO: "Denmark",
+  SW: "Switzerland",
   OL: "Norway",
 };
 

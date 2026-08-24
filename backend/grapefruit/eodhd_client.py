@@ -26,18 +26,15 @@ _MAX_RETRIES = 3
 _MAX_RETRY_SLEEP = 60.0
 _TIMEOUT = 30.0
 
-# Exchanges that make up the universe. Currently testing with France (PA) only.
-# Other EU exchanges will be enabled after verification:
-# XETRA (Germany), LSE (UK), HE (Finland), ST (Sweden), CO (Denmark), OL (Norway).
+# Biotech-focused universe: six European markets + potentially the US later.
 # The symbol stored everywhere is the full EODHD ticker (e.g. "LVMH.PA").
 EXCHANGES: list[str] = [
-    "PA",  # France (Euronext Paris) - testing first
-    # "XETRA",  # Germany - enable after PA verification
-    # "LSE",    # UK - enable after PA verification
-    # "HE",     # Finland - enable after PA verification
-    # "ST",     # Sweden - enable after PA verification
-    # "CO",     # Denmark - enable after PA verification
-    # "OL",     # Norway - enable after PA verification
+    "ST",     # Sweden
+    "LSE",    # UK
+    "PA",     # France
+    "SW",     # Switzerland
+    "CO",     # Denmark
+    "XETRA",  # Germany
 ]
 
 # Reporting currency of each exchange's MarketCapitalization / prices. Used to
@@ -51,6 +48,7 @@ _EXCHANGE_CURRENCY: dict[str, str] = {
     "PA": "EUR",
     "ST": "SEK",
     "CO": "DKK",
+    "SW": "CHF",
     "HE": "EUR",
     "OL": "NOK",
 }
@@ -73,6 +71,7 @@ _NATIVE_CURRENCIES: dict[str, set[str]] = {
     "PA": {"EUR"},
     "ST": {"SEK"},
     "CO": {"DKK"},
+    "SW": {"CHF"},
     "HE": {"EUR"},
     "OL": {"NOK"},
 }
