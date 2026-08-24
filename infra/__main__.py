@@ -60,7 +60,7 @@ JOB_NAMES = [
 # Perplexity rate limit.
 TIMEOUTS = {
     "weekly": "21600s",      # 6h: universe + sectors + catalysts over 6 markets
-    "scan_catalysts": "3600s",          # 1h safety margin for search + extraction
+    "scan_catalysts": "10800s",         # 3h: ~1,000 companies x 2 Perplexity calls @ 40/min
     "evaluate_predictions": "1800s",    # 30m
 }
 DEFAULT_TIMEOUT = "1800s"        # 30m
