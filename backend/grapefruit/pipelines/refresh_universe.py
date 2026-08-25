@@ -26,15 +26,15 @@ from grapefruit import eodhd_client, storage
 log = logging.getLogger(__name__)
 
 # Price ceiling per exchange, expressed in the exchange's NATIVE currency
-# (a ~$100-equivalent for ten-bagger hunting).
+# (a ~$200-equivalent for ten-bagger hunting).
 MAX_NATIVE_PRICE: dict[str, float] = {
-    "US": 100.0,   # United States (USD)
-    "ST": 950.0,   # Sweden  (SEK)
-    "LSE": 80.0,   # UK      (GBP)
-    "PA": 85.0,    # France  (EUR)
-    "SW": 80.0,    # Switzerland (CHF)
-    "CO": 640.0,   # Denmark (DKK)
-    "XETRA": 85.0, # Germany (EUR)
+    "US": 200.0,   # United States (USD)
+    "ST": 1900.0,  # Sweden  (SEK)
+    "LSE": 160.0,  # UK      (GBP)
+    "PA": 170.0,   # France  (EUR)
+    "SW": 160.0,   # Switzerland (CHF)
+    "CO": 1280.0,  # Denmark (DKK)
+    "XETRA": 170.0,# Germany (EUR)
 }
 
 # Minimum market cap (USD): exclude nano-caps (<$50M) and micro-caps

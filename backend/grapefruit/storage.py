@@ -699,11 +699,15 @@ def cleanup_symbols_by_exchange(exchange: str) -> dict[str, int]:
 
 
 def cleanup_non_biotech() -> dict[str, int]:
-    """Delete every symbol whose industry is NOT exactly "Biotechnology".
+    """Delete symbols that are not explicitly Biotechnology.
 
-    Strict fail-closed filter: unknown/null industries are also dropped
-    (they may resolve next run, but a mining shell must not sit in the
-    universe while we wait). Called after refresh_sectors.
+    Classified non-biotech (industry known and != 'Biotechnology') are removed
+    immediately. Unclassified (NULL industry) symbols get a grace window of
+    7 days: the sector backfill runs in 2000-symbol batches and may lag a
+    universe build, so a freshly added biotech whose industry has not been
+    resolved yet would otherwise be pruned before its sector pass runs. Names
+    still NULL after the grace window are treated as unclassifiable and
+    dropped. Called after refresh_sectors.
     Returns counts of deleted rows per table."""
     with _conn() as con:
         with con.cursor() as cur:
@@ -712,7 +716,8 @@ def cleanup_non_biotech() -> dict[str, int]:
                 DELETE FROM bars
                 WHERE symbol IN (
                     SELECT symbol FROM assets
-                    WHERE COALESCE(industry, '') != 'Biotechnology'
+                    WHERE (industry IS NOT NULL AND industry != 'Biotechnology')
+                       OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '7 days')
                 )
                 """
             )
@@ -720,7 +725,8 @@ def cleanup_non_biotech() -> dict[str, int]:
             cur.execute(
                 """
                 DELETE FROM assets
-                WHERE COALESCE(industry, '') != 'Biotechnology'
+                WHERE (industry IS NOT NULL AND industry != 'Biotechnology')
+                   OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '7 days')
                 """
             )
             assets_deleted = cur.rowcount
