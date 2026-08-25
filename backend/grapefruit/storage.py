@@ -712,37 +712,10 @@ def cleanup_symbols_by_exchange(exchange: str) -> dict[str, int]:
     return {"assets": assets_deleted, "bars": bars_deleted}
 
 
-def cleanup_non_biotech() -> dict[str, int]:
-    """Delete symbols that are not explicitly Biotechnology.
-
-    Classified non-biotech (industry known and != 'Biotechnology') are removed
-    immediately. Unclassified (NULL industry) symbols get a grace window of
-    48 hours: the sector backfill runs in 2000-symbol batches and may lag a
-    universe build, so a freshly added biotech whose industry has not been
-    resolved yet would otherwise be pruned before its sector pass runs. Names
-    still NULL after the grace window are treated as unclassifiable and
-    dropped (with a 16k-symbol US pool, a full 7-day grace would let thousands
-    of unclassified banks/miners linger). Called after refresh_sectors.
-    Returns counts of deleted rows per table."""
+def delete_asset(symbol: str) -> None:
+    """Delete one asset and its bars. FK cascades remove step changes,
+    step-change catalysts, and forward catalysts for it."""
     with _conn() as con:
         with con.cursor() as cur:
-            cur.execute(
-                """
-                DELETE FROM bars
-                WHERE symbol IN (
-                    SELECT symbol FROM assets
-                    WHERE (industry IS NOT NULL AND industry != 'Biotechnology')
-                       OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '48 hours')
-                )
-                """
-            )
-            bars_deleted = cur.rowcount
-            cur.execute(
-                """
-                DELETE FROM assets
-                WHERE (industry IS NOT NULL AND industry != 'Biotechnology')
-                   OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '48 hours')
-                """
-            )
-            assets_deleted = cur.rowcount
-    return {"assets": assets_deleted, "bars": bars_deleted}
+            cur.execute("DELETE FROM bars WHERE symbol = %s", [symbol])
+            cur.execute("DELETE FROM assets WHERE symbol = %s", [symbol])
