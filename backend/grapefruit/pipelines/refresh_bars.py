@@ -46,9 +46,11 @@ def _fetch_symbol(symbol: str, today: date) -> pd.DataFrame:
 
 def run() -> int:
     today = date.today()
-    symbols = storage.symbols_in_assets()
+    # Only classified-biotech names get price history; NULL-industry rows still
+    # awaiting sector backfill are skipped to avoid downloading bars for them.
+    symbols = storage.symbols_biotech()
     if not symbols:
-        log.warning("no symbols in `assets`; run refresh_universe first")
+        log.warning("no classified Biotechnology symbols; run refresh_sectors first")
         return 0
 
     total = 0

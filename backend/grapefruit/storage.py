@@ -502,6 +502,20 @@ def symbols_in_assets() -> list[str]:
         return [r[0] for r in cur.fetchall()]
 
 
+def symbols_biotech() -> list[str]:
+    """Symbols explicitly classified as Biotechnology.
+
+    The universe table can temporarily hold NULL-industry rows (grace window
+    before sector backfill resolves them). Price/bar/catalyst consumers must
+    only touch confirmed biotech names, or they burn API/credits on banks and
+    miners that just haven't been classified yet."""
+    with _cur() as cur:
+        cur.execute(
+            "SELECT symbol FROM assets WHERE industry = 'Biotechnology' ORDER BY symbol"
+        )
+        return [r[0] for r in cur.fetchall()]
+
+
 # ---------------------------------------------------------------------------
 # step_change_history
 # ---------------------------------------------------------------------------
@@ -703,11 +717,12 @@ def cleanup_non_biotech() -> dict[str, int]:
 
     Classified non-biotech (industry known and != 'Biotechnology') are removed
     immediately. Unclassified (NULL industry) symbols get a grace window of
-    7 days: the sector backfill runs in 2000-symbol batches and may lag a
+    48 hours: the sector backfill runs in 2000-symbol batches and may lag a
     universe build, so a freshly added biotech whose industry has not been
     resolved yet would otherwise be pruned before its sector pass runs. Names
     still NULL after the grace window are treated as unclassifiable and
-    dropped. Called after refresh_sectors.
+    dropped (with a 16k-symbol US pool, a full 7-day grace would let thousands
+    of unclassified banks/miners linger). Called after refresh_sectors.
     Returns counts of deleted rows per table."""
     with _conn() as con:
         with con.cursor() as cur:
@@ -717,7 +732,7 @@ def cleanup_non_biotech() -> dict[str, int]:
                 WHERE symbol IN (
                     SELECT symbol FROM assets
                     WHERE (industry IS NOT NULL AND industry != 'Biotechnology')
-                       OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '7 days')
+                       OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '48 hours')
                 )
                 """
             )
@@ -726,7 +741,7 @@ def cleanup_non_biotech() -> dict[str, int]:
                 """
                 DELETE FROM assets
                 WHERE (industry IS NOT NULL AND industry != 'Biotechnology')
-                   OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '7 days')
+                   OR (industry IS NULL AND refreshed_at < NOW() - INTERVAL '48 hours')
                 """
             )
             assets_deleted = cur.rowcount

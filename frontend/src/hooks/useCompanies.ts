@@ -8,11 +8,12 @@ const ACTIVE_EXCHANGES = ["US", "ST", "LSE", "PA", "SW", "CO", "XETRA"];
 async function fetchCompanies(): Promise<CompanyCard[]> {
   const exchangeFilter = ACTIVE_EXCHANGES.map(ex => `symbol.ilike.*.${ex}`).join(",");
 
-  // 1. Assets (filtered to active exchanges)
+  // 1. Assets (active exchanges, confirmed biotech only)
   const { data: assetsData, error: assetsError } = await supabase
     .from("assets")
     .select("symbol, name, exchange, sector, industry, market_cap_usd")
     .or(exchangeFilter)
+    .eq("industry", "Biotechnology")
     .limit(5000);
 
   if (assetsError) throw assetsError;

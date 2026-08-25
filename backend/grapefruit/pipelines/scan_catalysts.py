@@ -19,14 +19,21 @@ log = logging.getLogger(__name__)
 
 
 def run() -> int:
-    """Scan every asset for future catalysts. Returns number of results stored."""
+    """Scan every biotech asset for future catalysts. Returns stored count."""
     assets = storage.load_assets_map()
     if not assets:
         log.warning("no assets; run refresh_universe first")
         return 0
 
-    symbols = list(assets.keys())
-    log.info("scanning %d stocks for future catalysts", len(symbols))
+    # Only confirmed biotech names consume Perplexity credits; NULL-industry
+    # rows still awaiting sector classification must not be scanned.
+    biotech = set(storage.symbols_biotech())
+    symbols = [s for s in assets if s in biotech]
+    if not symbols:
+        log.warning("no classified Biotechnology assets to scan")
+        return 0
+
+    log.info("scanning %d biotech stocks for future catalysts", len(symbols))
 
     results = []
     detected_count = 0

@@ -16,11 +16,12 @@ log = logging.getLogger(__name__)
 
 
 def run() -> int:
-    """Detect 2x+ step changes for all symbols with bars data."""
-    symbols = storage.symbols_with_bars()
+    """Detect 2x+ step changes for biotech symbols with bars data."""
+    biotech = set(storage.symbols_biotech())
+    symbols = [s for s in storage.symbols_with_bars() if s in biotech]
     total = 0
 
-    log.info("scanning %d symbols for 2x+ step changes", len(symbols))
+    log.info("scanning %d biotech symbols for 2x+ step changes", len(symbols))
 
     for i, symbol in enumerate(symbols, start=1):
         df = storage.load_symbol(symbol)

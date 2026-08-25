@@ -26,12 +26,12 @@ def run() -> int:
     total = 0
     failures: list[str] = []
     for step in (
-        refresh_universe,        # 1. Build universe (PA main + Growth, <€100)
-        refresh_bars,            # 2. Fetch 3 years of daily prices
-        refresh_sectors,         # 3. Populate sector/industry + prune to Biotech-only
+        refresh_universe,        # 1. Build universe (price ceiling + mcap floor)
+        refresh_sectors,         # 2. Populate sector/industry; prune to Biotech-only
+        refresh_bars,            # 3. Fetch 3y daily prices for BIOTECH names only
         detect_step_changes,     # 4. Find 2×+ step changes (1 day–3 months)
         enrich_catalysts,        # 5. Explain past events with Perplexity
-        scan_catalysts,          # 6. Scan upcoming catalysts with Perplexity
+        scan_catalysts,          # 6. Scan upcoming catalysts with Perplexity (biotech only)
         evaluate_predictions,    # 7. Review predictions whose dates have passed
     ):
         name = step.__name__.split(".")[-1]
