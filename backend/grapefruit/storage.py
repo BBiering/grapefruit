@@ -282,8 +282,10 @@ def upsert_asset(row: dict) -> None:
             ON CONFLICT (symbol) DO UPDATE SET
                 name = EXCLUDED.name,
                 exchange = EXCLUDED.exchange,
-                sector = EXCLUDED.sector,
-                industry = EXCLUDED.industry,
+                -- refresh_universe always sends NULL here; keep a known
+                -- classification instead of wiping it each week.
+                sector = COALESCE(EXCLUDED.sector, assets.sector),
+                industry = COALESCE(EXCLUDED.industry, assets.industry),
                 market_cap_usd = EXCLUDED.market_cap_usd,
                 refreshed_at = EXCLUDED.refreshed_at
             """,
@@ -303,8 +305,10 @@ def upsert_assets(rows: list[dict]) -> int:
             ON CONFLICT (symbol) DO UPDATE SET
                 name = EXCLUDED.name,
                 exchange = EXCLUDED.exchange,
-                sector = EXCLUDED.sector,
-                industry = EXCLUDED.industry,
+                -- preserve a known classification when incoming sector/industry
+                -- are NULL (refresh_universe always builds rows with None).
+                sector = COALESCE(EXCLUDED.sector, assets.sector),
+                industry = COALESCE(EXCLUDED.industry, assets.industry),
                 market_cap_usd = EXCLUDED.market_cap_usd,
                 refreshed_at = EXCLUDED.refreshed_at
             """,
