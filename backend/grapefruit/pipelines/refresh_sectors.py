@@ -23,7 +23,9 @@ from grapefruit import eodhd_client, storage
 
 log = logging.getLogger(__name__)
 
-_MAX_PER_RUN = 2000  # process up to 2000 symbols per run (incremental backfill)
+_MAX_PER_RUN = 6000  # process up to 6000 symbols per run: covers the current
+# universe (~5k unclassified) in a single pass; keeps the batch well under the
+# EODHD daily call budget while staying within a single Cloud Run execution.
 
 
 def run() -> int:

@@ -62,6 +62,7 @@ TIMEOUTS = {
     "weekly": "21600s",      # 6h: universe + sectors + catalysts over 6 markets
     "scan_catalysts": "10800s",         # 3h: ~1,000 companies x 2 Perplexity calls @ 40/min
     "evaluate_predictions": "1800s",    # 30m
+    "refresh_sectors": "5400s",         # 1.5h: up to 6,000 fundamentals calls @ ~900/min
 }
 DEFAULT_TIMEOUT = "1800s"        # 30m
 DEFAULT_MEMORY = "1Gi"
