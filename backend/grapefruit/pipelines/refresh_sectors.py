@@ -37,6 +37,9 @@ def run() -> int:
     updated = 0
     pruned = 0
     for symbol in symbols:
+        # Record the attempt first so a later cleanup can tell "never tried"
+        # from "tried and EODHD had no data".
+        storage.mark_sector_attempted(symbol)
         try:
             fund = eodhd_client.fetch_fundamentals(symbol)
         except Exception as exc:  # noqa: BLE001 — API is flaky; skip & retry next run

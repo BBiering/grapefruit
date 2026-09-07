@@ -89,10 +89,12 @@ def init_db() -> None:
                 sector TEXT,
                 industry TEXT,
                 market_cap_usd DOUBLE PRECISION,
-                refreshed_at TIMESTAMPTZ
+                refreshed_at TIMESTAMPTZ,
+                sector_attempted_at TIMESTAMPTZ
             )
             """
         )
+        cur.execute("ALTER TABLE assets ADD COLUMN IF NOT EXISTS sector_attempted_at TIMESTAMPTZ")
         cur.execute(
             """
             CREATE TABLE IF NOT EXISTS app_state (
@@ -328,20 +330,35 @@ def load_asset(symbol: str) -> dict | None:
 
 
 def symbols_needing_sector(limit: int = 400) -> list[str]:
-    """All symbols in `assets` that have no sector yet. Used by refresh_sectors
-    to backfill sector/industry data for the full universe."""
+    """Symbols still unclassified by industry, oldest-attempt first.
+
+    Keyed on `industry` (not sector) and ordered so never-tried names
+    (NULL sector_attempted_at) are processed before already-failed ones.
+    Used by refresh_sectors to backfill sector/industry for the universe."""
     with _cur() as cur:
         cur.execute(
             """
             SELECT a.symbol
             FROM assets a
-            WHERE (a.sector IS NULL OR a.sector = '')
-            ORDER BY a.symbol
+            WHERE (a.industry IS NULL OR a.industry = '')
+            ORDER BY a.sector_attempted_at ASC NULLS FIRST, a.symbol
             LIMIT %s
             """,
             [limit],
         )
         return [r[0] for r in cur.fetchall()]
+
+
+def mark_sector_attempted(symbol: str) -> None:
+    """Record that refresh_sectors tried (successfully or not) to classify this
+    symbol. Lets a later cleanup distinguish 'never tried yet' from
+    'tried and EODHD had no data', so unresolved-but-legit names get retried
+    before being purged."""
+    with _cur() as cur:
+        cur.execute(
+            "UPDATE assets SET sector_attempted_at = NOW() WHERE symbol = %s",
+            [symbol],
+        )
 
 
 def update_asset_sector(symbol: str, *, sector: str | None, industry: str | None) -> None:
