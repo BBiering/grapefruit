@@ -52,3 +52,25 @@ export function exchangeToCountry(exchange: string | null | undefined): string |
   if (!exchange) return null;
   return EXCHANGE_COUNTRIES[exchange] || exchange;
 }
+
+// Humanize a catalyst date/window string. Handles ISO dates ("2026-09-25"),
+// quarters ("Q4 2026"), half-years ("H1 2027"), and free text. Falls back to
+// "Date unknown" only when there is genuinely nothing to show.
+export function displayCatalystDate(value: string | null | undefined): string {
+  if (!value || !value.trim()) return "Date unknown";
+  const v = value.trim();
+  let m = v.match(/^Q\s*([1-4])\s*(\d{4})$/i);       // "Q4 2026", "Q42026"
+  if (m) return `Q${m[1]} ${m[2]}`;
+  m = v.match(/^4Q\s*([1-4])\s*(\d{4})$/i);          // "4Q 2026"
+  if (m) return `Q${m[1]} ${m[2]}`;
+  m = v.match(/^H([12])\s*(\d{4})$/i);                // "H1 2027"
+  if (m) return `H${m[1]} ${m[2]}`;
+  m = v.match(/^(\d{4})-(\d{2})-(\d{2})$/);          // "2026-09-25"
+  if (m) {
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    if (!Number.isNaN(d.getTime())) {
+      return d.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" });
+    }
+  }
+  return v; // already human-readable ("Q4 2026", "H1 2027", free text)
+}

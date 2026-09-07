@@ -193,6 +193,47 @@ def init_db() -> None:
                         "company_metrics", "upcoming_events"):
             cur.execute(f"DROP TABLE IF EXISTS {legacy} CASCADE")
 
+        # User watchlist (distinct from the legacy screener `watchlist` dropped
+        # above). Public tool, no auth: anon can read/write it via Supabase.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS watchlist (
+                symbol TEXT PRIMARY KEY REFERENCES assets(symbol) ON DELETE CASCADE,
+                added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute("ALTER TABLE watchlist ENABLE ROW LEVEL SECURITY")
+        cur.execute("DROP POLICY IF EXISTS watchlist_anon_read ON watchlist")
+        cur.execute("CREATE POLICY watchlist_anon_read ON watchlist FOR SELECT TO anon USING (true)")
+        cur.execute("DROP POLICY IF EXISTS watchlist_anon_insert ON watchlist")
+        cur.execute("CREATE POLICY watchlist_anon_insert ON watchlist FOR INSERT TO anon WITH CHECK (true)")
+        cur.execute("DROP POLICY IF EXISTS watchlist_anon_delete ON watchlist")
+        cur.execute("CREATE POLICY watchlist_anon_delete ON watchlist FOR DELETE TO anon USING (true)")
+        cur.execute("GRANT SELECT, INSERT, DELETE ON watchlist TO anon, authenticated")
+
+        # Per-company chat history (Perplexity Q&A). Public, anon read/write.
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                id BIGSERIAL PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                role TEXT NOT NULL CHECK (role IN ('user', 'assistant')),
+                content TEXT NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+            """
+        )
+        cur.execute("CREATE INDEX IF NOT EXISTS chat_messages_symbol_idx ON chat_messages(symbol, created_at)")
+        cur.execute("ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY")
+        cur.execute("DROP POLICY IF EXISTS chat_anon_read ON chat_messages")
+        cur.execute("CREATE POLICY chat_anon_read ON chat_messages FOR SELECT TO anon USING (true)")
+        cur.execute("DROP POLICY IF EXISTS chat_anon_insert ON chat_messages")
+        cur.execute("CREATE POLICY chat_anon_insert ON chat_messages FOR INSERT TO anon WITH CHECK (true)")
+        cur.execute("DROP POLICY IF EXISTS chat_anon_delete ON chat_messages")
+        cur.execute("CREATE POLICY chat_anon_delete ON chat_messages FOR DELETE TO anon USING (true)")
+        cur.execute("GRANT SELECT, INSERT, DELETE ON chat_messages TO anon, authenticated")
+
 
 # ---------------------------------------------------------------------------
 # bars

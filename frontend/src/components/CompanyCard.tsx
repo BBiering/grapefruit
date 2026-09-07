@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import type { CompanyCard as CompanyCardType } from "../types";
-import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
+import { displaySymbol, formatPrice, formatMoney, exchangeToFlag, displayCatalystDate } from "../utils";
 import { MiniChart } from "./MiniChart";
 import { CompanyChat } from "./CompanyChat";
+import { WatchlistButton } from "./WatchlistButton";
+import { useWatchlist } from "../hooks/useCompanies";
 
 interface Props {
   company: CompanyCardType;
@@ -54,6 +56,7 @@ function TimelineItem({
 
 export function CompanyCard({ company }: Props) {
   const [chatOpen, setChatOpen] = useState(false);
+  const { data: watchlist } = useWatchlist();
   const pc = company.past_catalyst;
   const predictedEvents = company.predicted_catalysts;
   const predicted = company.predicted_catalyst;
@@ -69,8 +72,9 @@ export function CompanyCard({ company }: Props) {
         </div>
 
         <div className="card-info">
-          <h3>
-            {displaySymbol(company.symbol)} — {company.name} {exchangeToFlag(company.exchange)}
+          <h3 className="card-title-row">
+            <span>{displaySymbol(company.symbol)} — {company.name} {exchangeToFlag(company.exchange)}</span>
+            <WatchlistButton symbol={company.symbol} isSaved={Boolean(watchlist?.has(company.symbol))} />
           </h3>
           <div className="card-meta">
             {company.sector !== "Unknown" && company.sector}
@@ -87,7 +91,7 @@ export function CompanyCard({ company }: Props) {
           )}
           {predicted && (
             <div className="catalyst-line predicted">
-              <strong>Predicted catalyst:</strong> {predicted.date || "Date unknown"}
+              <strong>Predicted catalyst:</strong> {displayCatalystDate(predicted.date)}
               {predicted.event_name && ` | ${predicted.event_name}`}
               {predicted.impact_pct != null && ` | ${impactText(predicted.impact_pct)}`}
               {predicted.confidence && <> | Confidence: {confidenceBadge(predicted.confidence)}</>}
@@ -116,7 +120,7 @@ export function CompanyCard({ company }: Props) {
               <TimelineItem
                 key={event.id}
                 kind="predicted"
-                date={event.date || "Date unknown"}
+                date={displayCatalystDate(event.date)}
                 headline={`Predicted Catalyst — ${event.impact_type || event.event_name || "Other"}`}
               >
                 {event.event_name && <p><strong>{event.event_name}</strong></p>}

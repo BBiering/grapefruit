@@ -177,3 +177,16 @@ export function usePredictionPerformance() {
     staleTime: 5 * 60 * 1000,
   });
 }
+
+// Watchlist: read-only set of saved symbols (writes are mutations in caller).
+export function useWatchlist() {
+  return useQuery({
+    queryKey: ["watchlist"],
+    queryFn: async (): Promise<Set<string>> => {
+      const { data, error } = await supabase.from("watchlist").select("symbol");
+      if (error) throw error;
+      return new Set((data ?? []).map((row) => row.symbol));
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}

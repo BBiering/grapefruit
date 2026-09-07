@@ -1,6 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { CompanyCard as CompanyCardType } from "../types";
 import { displaySymbol, formatPrice, formatMoney, exchangeToFlag } from "../utils";
+import { supabase } from "../supabase";
 
 interface Props {
   company: CompanyCardType;
@@ -149,10 +150,38 @@ export function CompanyChat({ company, onClose }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const context = buildContext(company);
 
+  // Load persisted chat history for this symbol on mount.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data, error: err } = await supabase
+        .from("chat_messages")
+        .select("role, content")
+        .eq("symbol", company.symbol)
+        .order("id", { ascending: true })
+        .limit(200);
+      if (cancelled) return;
+      if (!err && data) {
+        setMessages(data.map((row) => ({ role: row.role as "user" | "assistant", text: row.content })));
+        setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight }), 50);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [company.symbol]);
+
+  const persist = async (role: "user" | "assistant", text: string) => {
+    try {
+      await supabase.from("chat_messages").insert({ symbol: company.symbol, role, content: text });
+    } catch (err) {
+      console.warn("chat history persist failed", err); // non-fatal
+    }
+  };
+
   const send = async () => {
     const question = input.trim();
     if (!question || loading) return;
     setMessages((prev) => [...prev, { role: "user", text: question }]);
+    persist("user", question);
     setInput("");
     setLoading(true);
     setError(null);
@@ -166,7 +195,9 @@ export function CompanyChat({ company, onClose }: Props) {
       if (!resp.ok || !data.answer) {
         throw new Error(data.error || `Request failed (${resp.status})`);
       }
-      setMessages((prev) => [...prev, { role: "assistant", text: data.answer ?? "" }]);
+      const answer = data.answer ?? "";
+      setMessages((prev) => [...prev, { role: "assistant", text: answer }]);
+      persist("assistant", answer);
       setTimeout(() => listRef.current?.scrollTo({ top: listRef.current.scrollHeight }), 50);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Chat request failed");
