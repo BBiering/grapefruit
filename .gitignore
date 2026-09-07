@@ -226,3 +226,4 @@ frontend/dist/
 # Local data cache
 /data/
 
+.DS_Store
