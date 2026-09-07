@@ -79,7 +79,7 @@ def scan_catalyst(
 ) -> dict:
     """Two-step future-catalyst scan for a single symbol.
 
-    1. Search the web for upcoming scheduled events (next ~3 months).
+    1. Search the web for upcoming scheduled events (next ~6 months).
     2. Ask sonar-pro to extract a structured report from the search results.
 
     Returns {detected, event_name, event_date, impact_type, expected_impact_pct,
@@ -107,7 +107,7 @@ def scan_catalyst(
     # France/EU (EMA/CHMP, ANSM) and the US (FDA). Country-specific news plus
     # regulatory announcements drive these moves; ordinary earnings rarely do.
     query = (
-        f"{label} biotech upcoming catalyst events next 3 months: "
+        f"{label} biotech upcoming catalyst events next 6 months: "
         f"EMA CHMP opinion dates, European Commission decisions, Phase 2b/3 topline "
         f"readouts, FDA PDUFA target dates, FDA advisory committee votes, MAA/NDA "
         f"submissions, clinical trial data presentations. Exclude routine quarterly earnings. "
@@ -128,7 +128,7 @@ def scan_catalyst(
     user_msg = (
         "You are an institutional biotech research analyst. Based ONLY on the web "
         "search results below, identify SPECIFIC upcoming catalyst events in the "
-        "next 3 months for this biotech stock "
+        "next 6 months for this biotech stock "
         f"'{label}' (sector: {sector_str}, price ~{price_str}).\n\n"
         "Focus on scheduled, dateable drug-development catalysts that are often "
         "predictable in advance and can drive structural repricing: EMA CHMP opinion "
