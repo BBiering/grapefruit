@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { useCompanies } from "../hooks/useCompanies";
+import { useCompanies, useWatchlist } from "../hooks/useCompanies";
 import { CompanyCard } from "../components/CompanyCard";
 import { exchangeToCountry, exchangeToFlag } from "../utils";
 
@@ -20,8 +20,10 @@ export function Dashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [country, setCountry] = useState("all");
   const [catalystFilter, setCatalystFilter] = useState<CatalystFilter>("all");
+  const [watchlistOnly, setWatchlistOnly] = useState(false);
 
   const { data: companies = [], isLoading } = useCompanies();
+  const { data: watchlist = new Set<string>() } = useWatchlist();
   // Commented out: high-level metrics are not displayed at the moment.
   // const { data: performance } = usePredictionPerformance();
 
@@ -72,10 +74,11 @@ export function Dashboard() {
     });
   }, [sorted, catalystFilter]);
 
-  // Search by company name or ticker, plus country filter.
+  // Search by company name or ticker, plus country filter + watchlist-only.
   const visible = useMemo(() => {
     let result = catalystFiltered.filter((company) => {
       if (country !== "all" && exchangeToCountry(company.exchange) !== country) return false;
+      if (watchlistOnly && !watchlist.has(company.symbol)) return false;
       return true;
     });
     if (searchTerm.trim()) {
@@ -87,7 +90,7 @@ export function Dashboard() {
       );
     }
     return result;
-  }, [catalystFiltered, searchTerm, country]);
+  }, [catalystFiltered, searchTerm, country, watchlistOnly, watchlist]);
 
   return (
     <div className="dashboard">
@@ -127,6 +130,13 @@ export function Dashboard() {
           <option value="past">Past catalysts</option>
           <option value="both">Both</option>
         </select>
+        <button
+          className={`watchlist-toggle ${watchlistOnly ? "active" : ""}`}
+          onClick={() => setWatchlistOnly((v) => !v)}
+          aria-pressed={watchlistOnly}
+        >
+          ⭐ Watchlist
+        </button>
       </div>
 
       <main className="card-list">

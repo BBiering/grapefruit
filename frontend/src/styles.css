@@ -666,6 +666,27 @@ code {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+.search-bar .watchlist-toggle {
+  flex-shrink: 0;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--glass-strong);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+}
+
+.search-bar .watchlist-toggle.active {
+  background: var(--accent-2);
+  color: #fff;
+  border-color: var(--accent-2);
+}
+
 /* Full-width company card: grows with content, capped at ~70% of the viewport. */
 .company-card-full {
   cursor: pointer;
@@ -1199,6 +1220,26 @@ code {
 
 .chat-close:hover {
   color: var(--text);
+}
+
+.chat-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.chat-clear {
+  border: none;
+  background: transparent;
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  padding: 0 0.25rem;
+}
+
+.chat-clear:hover {
+  color: #bf4f4f;
 }
 
 .chat-list {

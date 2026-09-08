@@ -211,9 +211,27 @@ export function CompanyChat({ company, onClose }: Props) {
       <div className="chat-window" onClick={(e) => e.stopPropagation()}>
         <div className="chat-header">
           <h4>Ask about {displaySymbol(company.symbol)}</h4>
-          <button className="chat-close" onClick={onClose} aria-label="Close chat">
-            ×
-          </button>
+          <div className="chat-header-actions">
+            <button
+              className="chat-clear"
+              onClick={async () => {
+                if (messages.length === 0) return;
+                if (!window.confirm("Clear chat history for this company?")) return;
+                const { error } = await supabase.from("chat_messages").delete().eq("symbol", company.symbol);
+                if (error) {
+                  setError("Failed to clear history");
+                  return;
+                }
+                setMessages([]);
+              }}
+              aria-label="Clear chat history"
+            >
+              🗑
+            </button>
+            <button className="chat-close" onClick={onClose} aria-label="Close chat">
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="chat-list" ref={listRef}>
