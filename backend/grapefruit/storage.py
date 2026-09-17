@@ -431,47 +431,155 @@ def get_app_state(key: str) -> dict | None:
         return row[0] if row else None
 
 
+_STOP_TOKENS = {
+    "results", "topline", "headline", "top", "line", "data", "readout", "interim",
+    "final", "study", "trial", "the", "of", "in", "for", "and", "a", "an", "to",
+    "from", "phase", "pivotal", "planned", "upcoming", "expected", "catalyst",
+    "event", "announcement", "company", "stock",
+}
+
+
+def _norm_tokens(name: str) -> list[str]:
+    import re
+    return [
+        t for t in re.sub(r"[^a-z0-9]+", " ", name.lower()).split()
+        if len(t) > 2 and t not in _STOP_TOKENS
+    ]
+
+
+def _similarity(a_toks: list[str], b_toks: list[str]) -> float:
+    if not a_toks or not b_toks:
+        return 0.0
+    sb = set(b_toks)
+    inter = sum(1 for t in a_toks if t in sb)
+    return inter / min(len(a_toks), len(b_toks))
+
+
+def _distinctive_shared(a_toks: list[str], b_toks: list[str]) -> bool:
+    sb = set(b_toks)
+    return any(len(t) >= 6 and t in sb for t in a_toks)
+
+
+def _matches_existing(incoming: dict, existing: dict) -> bool:
+    """Near-duplicate? Same event reworded by the LLM across scans, or the
+    same window+type. Mirrors the frontend dedupe so display stays 1:1."""
+    if incoming["symbol"] != existing["symbol"]:
+        return False
+    inc_name = (incoming.get("event_name") or "").strip()
+    ex_name = (existing.get("event_name") or "").strip()
+    inc_win = incoming.get("expected_window") or ""
+    ex_win = existing.get("expected_window") or ""
+    if inc_win and ex_win and inc_win == ex_win and incoming.get("impact_type") == existing.get("impact_type"):
+        return True
+    if not inc_name or not ex_name:
+        return False
+    it, et = _norm_tokens(inc_name), _norm_tokens(ex_name)
+    same_type = incoming.get("impact_type") == existing.get("impact_type")
+    return _similarity(it, et) >= 0.55 or (same_type and _distinctive_shared(it, et))
+
+
 def replace_forward_catalysts(rows: list[dict]) -> int:
-    """Upsert detected predictions without deleting prior prediction history."""
+    """Upsert detected predictions without deleting prior prediction history.
+
+    The UNIQUE (symbol, event_name, expected_window) key does not catch the
+    LLM's weekly rewordings of the same event, so without this guard each scan
+    appends near-duplicate rows. Incoming rows that match an existing row for
+    the same symbol (name similarity / same window+type) refresh that row
+    instead of inserting a new one.
+    """
     detected_rows = [r for r in rows if r.get("detected")]
     if not detected_rows:
         return 0
 
+    symbols = [r["symbol"] for r in detected_rows]
+    with _conn() as con:
+        with con.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                "SELECT id, symbol, event_name, impact_type, expected_window "
+                "FROM forward_catalysts WHERE symbol = ANY(%s)",
+                [symbols],
+            )
+            existing_all = cur.fetchall()
+
+    by_symbol: dict[str, list[dict]] = {}
+    for ex in existing_all:
+        by_symbol.setdefault(ex["symbol"], []).append(ex)
+
+    updates: list[tuple[dict, dict]] = []  # (existing row, incoming row)
+    inserts: list[dict] = []
+    for row in detected_rows:
+        matched = next(
+            (ex for ex in by_symbol.get(row["symbol"], []) if _matches_existing(row, ex)),
+            None,
+        )
+        if matched:
+            updates.append((matched, row))
+        else:
+            inserts.append(row)
+
     with _conn() as con:
         with con.cursor() as cur:
-            cur.executemany(
-                """
-                INSERT INTO forward_catalysts (
-                    symbol, detected, event_name, impact_type, expected_window,
-                    strategic_summary, source_url, model, confidence,
-                    expected_impact_pct, scanned_at
-                )
-                VALUES (%s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
-                ON CONFLICT (symbol, event_name, expected_window) DO UPDATE SET
-                    detected = TRUE,
-                    impact_type = EXCLUDED.impact_type,
-                    strategic_summary = EXCLUDED.strategic_summary,
-                    source_url = EXCLUDED.source_url,
-                    model = EXCLUDED.model,
-                    confidence = EXCLUDED.confidence,
-                    expected_impact_pct = EXCLUDED.expected_impact_pct,
-                    scanned_at = EXCLUDED.scanned_at
-                """,
-                [
-                    (
-                        r["symbol"],
-                        r.get("event_name") or "Unspecified catalyst",
-                        r.get("impact_type"),
-                        r.get("expected_window") or "",
-                        r.get("strategic_summary"),
-                        r.get("source_url"),
-                        r.get("model", "agent-fast"),
-                        r.get("confidence"),
-                        r.get("expected_impact_pct"),
+            if inserts:
+                cur.executemany(
+                    """
+                    INSERT INTO forward_catalysts (
+                        symbol, detected, event_name, impact_type, expected_window,
+                        strategic_summary, source_url, model, confidence,
+                        expected_impact_pct, scanned_at
                     )
-                    for r in detected_rows
-                ],
-            )
+                    VALUES (%s, TRUE, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                    ON CONFLICT (symbol, event_name, expected_window) DO UPDATE SET
+                        detected = TRUE,
+                        impact_type = EXCLUDED.impact_type,
+                        strategic_summary = EXCLUDED.strategic_summary,
+                        source_url = EXCLUDED.source_url,
+                        model = EXCLUDED.model,
+                        confidence = EXCLUDED.confidence,
+                        expected_impact_pct = EXCLUDED.expected_impact_pct,
+                        scanned_at = EXCLUDED.scanned_at
+                    """,
+                    [
+                        (
+                            r["symbol"],
+                            r.get("event_name") or "Unspecified catalyst",
+                            r.get("impact_type"),
+                            r.get("expected_window") or "",
+                            r.get("strategic_summary"),
+                            r.get("source_url"),
+                            r.get("model", "agent-fast"),
+                            r.get("confidence"),
+                            r.get("expected_impact_pct"),
+                        )
+                        for r in inserts
+                    ],
+                )
+            if updates:
+                cur.executemany(
+                    """
+                    UPDATE forward_catalysts SET
+                        detected = TRUE,
+                        impact_type = %s,
+                        strategic_summary = %s,
+                        source_url = %s,
+                        model = %s,
+                        confidence = %s,
+                        expected_impact_pct = %s,
+                        scanned_at = NOW()
+                    WHERE id = %s
+                    """,
+                    [
+                        (
+                            row.get("impact_type"),
+                            row.get("strategic_summary"),
+                            row.get("source_url"),
+                            row.get("model", "agent-fast"),
+                            row.get("confidence"),
+                            row.get("expected_impact_pct"),
+                            existing["id"],
+                        )
+                        for existing, row in updates
+                    ],
+                )
     return len(detected_rows)
 
 

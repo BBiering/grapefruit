@@ -1,9 +1,81 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../supabase";
-import type { CompanyCard, PastCatalyst, PredictedCatalyst, PredictionPerformance } from "../types";
+import type { CompanyCard, PastCatalyst, PredictedCatalyst, PredictionPerformance, ChartEvent } from "../types";
 
 // Must match eodhd_client.EXCHANGES in the backend.
 const ACTIVE_EXCHANGES = ["US", "ST", "LSE", "PA", "SW", "CO", "XETRA"];
+
+// ---------------------------------------------------------------------------
+// Event dedupe: the weekly scan appends a new forward_catalysts row per run,
+// and the LLM rewraps the same event's name each time, so one real catalyst
+// shows up several times with near-identical names. Merge those into a single
+// representative per cluster for display.
+// ---------------------------------------------------------------------------
+const STOP_TOKENS = new Set([
+  "results", "topline", "headline", "top", "line", "data", "readout", "interim",
+  "final", "study", "trial", "the", "of", "in", "for", "and", "a", "an", "to",
+  "from", "phase", "pivotal", "planned", "upcoming", "expected", "catalyst",
+  "event", "announcement", "company", "stock",
+]);
+
+function normTokens(name: string): string[] {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((t) => t.length > 2 && !STOP_TOKENS.has(t));
+}
+
+function nameSimilarity(a: string, b: string): number {
+  const ta = normTokens(a);
+  const tb = normTokens(b);
+  if (!ta.length || !tb.length) return 0;
+  const sb = new Set(tb);
+  let inter = 0;
+  for (const t of ta) if (sb.has(t)) inter++;
+  return inter / Math.min(ta.length, tb.length);
+}
+
+const CONF_RANK: Record<string, number> = { high: 2, medium: 1, low: 0 };
+
+function eventScore(e: PredictedCatalyst): number {
+  return (
+    (e.date && e.date.trim() ? 10_000 : 0) +
+    (CONF_RANK[e.confidence ?? ""] ?? 0) * 100 +
+    (e.impact_pct ?? 0)
+  );
+}
+
+// Share at least one distinctive (>=6 char) token, e.g. a drug/codename.
+function sharesDistinctiveToken(a: string, b: string): boolean {
+  const ta = normTokens(a);
+  const tb = new Set(normTokens(b));
+  return ta.some((t) => t.length >= 6 && tb.has(t));
+}
+
+function dedupePredicted(events: PredictedCatalyst[]): PredictedCatalyst[] {
+  const clusters: PredictedCatalyst[][] = [];
+  for (const e of events) {
+    let merged = false;
+    for (const c of clusters) {
+      const rep = c[0];
+      const sameWindowType = rep.date && e.date && rep.date === e.date && rep.impact_type === e.impact_type;
+      const similarName =
+        rep.event_name && e.event_name &&
+        (nameSimilarity(rep.event_name, e.event_name) >= 0.55 ||
+          (rep.impact_type === e.impact_type && sharesDistinctiveToken(rep.event_name, e.event_name)));
+      if (sameWindowType || similarName) {
+        c.push(e);
+        merged = true;
+        break;
+      }
+    }
+    if (!merged) clusters.push([e]);
+  }
+  return clusters
+    .map((c) => c.reduce((best, e) => (eventScore(e) > eventScore(best) ? e : best)))
+    .sort((a, b) => (b.scanned_at ?? "").localeCompare(a.scanned_at ?? ""));
+}
 
 async function fetchCompanies(): Promise<CompanyCard[]> {
   const exchangeFilter = ACTIVE_EXCHANGES.map(ex => `symbol.ilike.*.${ex}`).join(",");
@@ -101,8 +173,14 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
   for (const asset of assetsData) {
     const step = stepBySymbol.get(asset.symbol);
     const exp = step ? explanations.get(step.id) : null;
-    const predicted_catalysts = predictedBySymbol.get(asset.symbol) || [];
-    const predicted_catalyst = predicted_catalysts[0] || null;
+    // Earnings are not binary drug catalysts (the scan prompt excludes them)
+    // and they clutter the card; drop them before dedupe.
+    const rawPredicted = (predictedBySymbol.get(asset.symbol) || []).filter(
+      (ev) => ev.impact_type !== "Earnings",
+    );
+    const predicted_catalysts = dedupePredicted(rawPredicted);
+    const predicted_catalyst =
+      [...predicted_catalysts].sort((a, b) => eventScore(b) - eventScore(a))[0] ?? null;
 
     const past_catalyst: PastCatalyst | null = step ? {
       start_date: step.start_ts,
@@ -116,6 +194,38 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       foreseeable_evidence: exp?.foreseeable_evidence || null,
     } : null;
 
+    // Dots for the chart: past move(s) + dated predicted events.
+    const chart_events: ChartEvent[] = [];
+    if (step) {
+      chart_events.push({
+        id: `past-${step.id}`,
+        date: step.end_ts,
+        kind: "past",
+        event_name: exp?.headline ?? null,
+        impact_type: "Historical move",
+        summary: exp?.summary ?? null,
+        source_url: null,
+        headline: exp?.headline ?? null,
+        multiplier: step.multiplier,
+        spike_explanation: exp?.spike_explanation ?? null,
+        was_foreseeable: exp?.was_foreseeable ?? null,
+        foreseeable_evidence: exp?.foreseeable_evidence ?? null,
+      });
+    }
+    for (const ev of predicted_catalysts) {
+      if (ev.date && ev.date.trim()) {
+        chart_events.push({
+          id: `fwd-${ev.id}`,
+          date: ev.date,
+          kind: "predicted",
+          event_name: ev.event_name,
+          impact_type: ev.impact_type,
+          summary: ev.summary,
+          source_url: ev.source_url,
+        });
+      }
+    }
+
     companies.push({
       symbol: asset.symbol,
       name: asset.name || asset.symbol,
@@ -127,6 +237,7 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       past_catalyst,
       predicted_catalyst,
       predicted_catalysts,
+      chart_events,
     });
   }
 

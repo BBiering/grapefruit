@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
-import type { CompanyCard as CompanyCardType } from "../types";
-import { displaySymbol, formatPrice, formatMoney, exchangeToFlag, displayCatalystDate } from "../utils";
+import type { CompanyCard as CompanyCardType, ModelNews } from "../types";
+import {
+  displaySymbol, formatPrice, formatMoney, exchangeToFlag,
+  displayCatalystDate, timeHorizon, pickNextEvent,
+} from "../utils";
 import { MiniChart } from "./MiniChart";
-import { CompanyChat } from "./CompanyChat";
 import { WatchlistButton } from "./WatchlistButton";
 import { useWatchlist } from "../hooks/useCompanies";
 
@@ -11,64 +12,61 @@ interface Props {
   company: CompanyCardType;
 }
 
-function confidenceBadge(c: "high" | "medium" | "low" | null) {
-  if (!c) return null;
-  const colors: Record<string, string> = { high: "#1f8a4c", medium: "#b27a00", low: "#bf4f4f" };
-  return <span style={{ color: colors[c], fontWeight: 700 }}>{c.toUpperCase()}</span>;
-}
+const AI_PROVIDERS = [
+  { id: "openai", label: "ChatGPT" },
+  { id: "anthropic", label: "Claude" },
+  { id: "gemini", label: "Gemini" },
+] as const;
 
-function impactText(impact: number | null) {
-  if (impact == null) return "Impact: not estimated";
-  const multiplier = 1 + impact / 100;
-  return `Expected impact: ${impact >= 0 ? "+" : ""}${impact.toFixed(0)}% (×${multiplier.toFixed(1)}; model estimate)`;
-}
-
-/** Collapsible timeline entry: shows the heading, details on demand. */
-function TimelineItem({
-  kind,
-  date,
-  headline,
-  children,
-}: {
-  kind: "predicted" | "past";
-  date: string;
-  headline: string;
-  children: React.ReactNode;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className={`timeline-item ${kind}`}>
-      <div className="timeline-marker" />
-      <div className="timeline-content">
-        <button
-          className="timeline-heading"
-          onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
-          aria-expanded={expanded}
-        >
-          <span className="timeline-heading-text">{date} — {headline}</span>
-          <span className="timeline-toggle">{expanded ? "−" : "+"}</span>
-        </button>
-        {expanded && <div className="timeline-details">{children}</div>}
-      </div>
-    </div>
-  );
-}
+type AiStatus =
+  | { provider: string; label: string; status: "loading" }
+  | { provider: string; label: string; status: "error"; message: string }
+  | { provider: string; label: string; status: "done"; result: ModelNews };
 
 export function CompanyCard({ company }: Props) {
-  const [chatOpen, setChatOpen] = useState(false);
   const { data: watchlist } = useWatchlist();
-  const pc = company.past_catalyst;
-  const predictedEvents = company.predicted_catalysts;
-  const predicted = company.predicted_catalyst;
+  const [ai, setAi] = useState<AiStatus | null>(null);
+
+  const next = pickNextEvent(company.predicted_catalysts);
+
+  async function askAi(provider: string, label: string) {
+    setAi({ provider, label, status: "loading" });
+    try {
+      const res = await fetch("/api/model-news", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          provider,
+          symbol: company.symbol,
+          name: company.name,
+          exchange: company.exchange,
+          sector: company.sector,
+          context: [
+            `Current price: ${formatPrice(company.last_close)}`,
+            next
+              ? `Next binary event: ${next.event_name || next.impact_type || "catalyst"}${next.date ? ` — ${timeHorizon(next.date)}` : ""}`
+              : "No upcoming catalyst detected",
+          ].join("\n"),
+        }),
+      });
+      const data = (await res.json()) as ModelNews;
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      setAi({ provider, label, status: "done", result: data });
+    } catch (err) {
+      setAi({
+        provider,
+        label,
+        status: "error",
+        message: err instanceof Error ? err.message : "Request failed",
+      });
+    }
+  }
 
   return (
     <div className="card company-card-full expanded">
       <div className="card-top">
         <div className="card-chart">
-          <MiniChart
-            symbol={company.symbol}
-            pastEvent={pc ? { start_ts: pc.start_date, end_ts: pc.date } : undefined}
-          />
+          <MiniChart symbol={company.symbol} events={company.chart_events} />
         </div>
 
         <div className="card-info">
@@ -84,88 +82,55 @@ export function CompanyCard({ company }: Props) {
             {formatPrice(company.last_close)} / {formatMoney(company.market_cap_usd)}
           </div>
 
-          {pc && (
-            <div className="catalyst-line past">
-              <strong>Past catalyst:</strong> {pc.date} | ×{pc.multiplier.toFixed(1)} | {pc.reason}
+          {next ? (
+            <div className="next-event">
+              <div className="ne-label">Next binary event</div>
+              <div className="ne-type">{next.impact_type || next.event_name || "Catalyst"}</div>
+              {next.impact_type && next.event_name && next.event_name !== next.impact_type && (
+                <div className="ne-name">{next.event_name}</div>
+              )}
+              <div className="ne-horizon">Time horizon: {timeHorizon(next.date?.trim() ? next.date : next.event_name)}</div>
             </div>
-          )}
-          {predicted && (
-            <div className="catalyst-line predicted">
-              <strong>Predicted catalyst:</strong> {displayCatalystDate(predicted.date)}
-              {predicted.event_name && ` | ${predicted.event_name}`}
-              {predicted.impact_pct != null && ` | ${impactText(predicted.impact_pct)}`}
-              {predicted.confidence && <> | Confidence: {confidenceBadge(predicted.confidence)}</>}
+          ) : company.past_catalyst ? (
+            <div className="catalyst-line muted">
+              No upcoming binary event. Last move: {displayCatalystDate(company.past_catalyst.date)} ×
+              {company.past_catalyst.multiplier.toFixed(1)}
             </div>
-          )}
-          {!pc && !predicted && (
+          ) : (
             <div className="catalyst-line muted">No catalysts detected</div>
           )}
-
         </div>
       </div>
 
-      <div className="card-detail">
-          <div className="timeline-title-row">
-            <h4 className="timeline-title">Catalyst timeline</h4>
-            <button
-              className="chat-open-btn"
-              onClick={(e) => { e.stopPropagation(); setChatOpen(true); }}
-            >
-              <img src="/perplexity.png" alt="" className="chat-open-logo" />
-              Ask Perplexity
-            </button>
-          </div>
-          <div className="timeline">
-            {predictedEvents.map((event) => (
-              <TimelineItem
-                key={event.id}
-                kind="predicted"
-                date={displayCatalystDate(event.date)}
-                headline={`Predicted Catalyst — ${event.impact_type || event.event_name || "Other"}`}
+      <div className="card-ai">
+        <div className="ai-head">
+          <h4 className="ai-title">Latest news &amp; pros/cons</h4>
+          <div className="ai-buttons">
+            {AI_PROVIDERS.map((p) => (
+              <button
+                key={p.id}
+                className="ai-btn"
+                disabled={ai?.status === "loading"}
+                onClick={() => askAi(p.id, p.label)}
               >
-                {event.event_name && <p><strong>{event.event_name}</strong></p>}
-                <p>{event.summary || "No detailed description available."}</p>
-                <p>{impactText(event.impact_pct)} | Confidence: {confidenceBadge(event.confidence)} | Status: {event.outcome}</p>
-                {event.source_url && (
-                  <p><a href={event.source_url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>View source</a></p>
-                )}
-              </TimelineItem>
+                {p.label}
+              </button>
             ))}
-
-            {pc && (
-              <TimelineItem
-                kind="past"
-                date={pc.date}
-                headline={`Past Catalyst — ${pc.headline || pc.reason}`}
-              >
-                <p>{pc.summary || "No detailed description available."}</p>
-                {pc.spike_explanation && (
-                  <>
-                    <h5>Why the spike?</h5>
-                    <p>{pc.spike_explanation}</p>
-                  </>
-                )}
-                {pc.foreseeable_evidence && (
-                  <>
-                    <h5>Was it foreseeable?</h5>
-                    <span className={`badge ${pc.was_foreseeable ? "yes" : "no"}`}>
-                      {pc.was_foreseeable ? "Yes" : "No"}
-                    </span>
-                    <p>{pc.foreseeable_evidence}</p>
-                  </>
-                )}
-              </TimelineItem>
-            )}
-
-            {!predictedEvents.length && !pc && <p className="muted">No catalyst events recorded.</p>}
           </div>
         </div>
 
-      {chatOpen &&
-        createPortal(
-          <CompanyChat company={company} onClose={() => setChatOpen(false)} />,
-          document.body,
+        {ai?.status === "loading" && (
+          <div className="ai-result muted">Querying {ai.label} for the latest news…</div>
         )}
+        {ai?.status === "error" && (
+          <div className="ai-result ai-error">{ai.message}</div>
+        )}
+        {ai?.status === "done" && ai.result && (
+          <div className="ai-result">
+            <pre className="ai-text">{ai.result.content}</pre>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
