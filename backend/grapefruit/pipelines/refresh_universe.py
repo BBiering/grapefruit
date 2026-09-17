@@ -128,6 +128,17 @@ def run() -> int:
         _cleanup_us_symbols()
 
     n = storage.upsert_assets(rows)
+    # Upsert never removes rows: prune stale symbols that fall below the cap
+    # floor after this run's fresh values are applied (recovered stocks were
+    # just re-upserted above the floor and are kept).
+    pruned = storage.prune_assets_below_min_cap(MIN_MARKET_CAP_USD)
+    if pruned["assets"]:
+        log.warning(
+            "pruned %d assets (and %d bar rows) below the %d USD cap floor",
+            pruned["assets"],
+            pruned["bars"],
+            MIN_MARKET_CAP_USD,
+        )
     symbols = sorted(r["symbol"] for r in rows)
     storage.set_app_state(
         "universe",

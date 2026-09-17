@@ -781,3 +781,33 @@ def delete_asset(symbol: str) -> None:
         with con.cursor() as cur:
             cur.execute("DELETE FROM bars WHERE symbol = %s", [symbol])
             cur.execute("DELETE FROM assets WHERE symbol = %s", [symbol])
+
+
+def prune_assets_below_min_cap(min_cap_usd: float) -> dict[str, int]:
+    """Delete assets (and their bars, no FK) whose stored market cap is below
+    the universe floor. Call AFTER upsert_assets: symbols still below the floor
+    after this run's fresh values are evaluated get removed; one that recovered
+    above the floor was just re-upserted and is kept. Returns counts of
+    deleted rows per table."""
+    with _conn() as con:
+        with con.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM bars
+                WHERE symbol IN (
+                    SELECT symbol FROM assets
+                    WHERE market_cap_usd IS NOT NULL AND market_cap_usd < %s
+                )
+                """,
+                [min_cap_usd],
+            )
+            bars_deleted = cur.rowcount
+            cur.execute(
+                """
+                DELETE FROM assets
+                WHERE market_cap_usd IS NOT NULL AND market_cap_usd < %s
+                """,
+                [min_cap_usd],
+            )
+            assets_deleted = cur.rowcount
+    return {"assets": assets_deleted, "bars": bars_deleted}
