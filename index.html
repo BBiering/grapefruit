@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Grapefruit — biotech screener that finds binary events</title>
+<meta name="description" content="Grapefruit scans the US and EU small-cap biotech universe weekly and reads the calendar ahead of it — PDUFA dates, Phase 2/3 readouts, EMA decisions." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,500;1,600&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    margin: 0; background: #fbf8f5; color: #1c1a18; overflow-x: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: #b8365f; text-decoration: none; }
+  a:hover { color: #e8664f; }
+  details > summary { list-style: none; cursor: pointer; }
+  details > summary::-webkit-details-marker { display: none; }
+  details[open] .plus { transform: rotate(45deg); }
+  .plus { transition: transform .18s ease; }
+
+  .wordmark {
+    font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-weight: 600;
+    letter-spacing: .01em;
+    background: linear-gradient(135deg, #f4bd4c, #e8664f 55%, #e0537f);
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .navlink { color: #6b6661; }
+  .navlink:hover { color: #1c1a18; }
+
+  .cta {
+    color: #fff; font-weight: 600; border-radius: 999px;
+    background: linear-gradient(135deg, #e8664f, #f4bd4c);
+    box-shadow: 0 6px 18px rgba(232,102,79,.28);
+    transition: box-shadow .18s ease;
+  }
+  .cta:hover { color: #fff; box-shadow: 0 12px 28px rgba(232,102,79,.34); }
+  .cta-ghost {
+    border: 1px solid rgba(28,26,24,.16); color: #1c1a18; border-radius: 999px;
+    transition: border-color .18s ease;
+  }
+  .cta-ghost:hover { color: #1c1a18; border-color: rgba(28,26,24,.32); }
+
+  .glass {
+    background: rgba(255,255,255,.55);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid rgba(255,255,255,.6);
+    box-shadow: 0 8px 32px rgba(28,26,24,.1), inset 0 1px 0 rgba(255,255,255,.6);
+  }
+  .pill-filter {
+    padding: 10px 16px; border-radius: 999px; border: 1px solid rgba(28,26,24,.16);
+    background: rgba(255,255,255,.72); font-size: 13px; font-weight: 500;
+  }
+  .faq { border-top: 1px solid rgba(28,26,24,.1); padding: 22px 4px; }
+  .faq summary { display: flex; align-items: center; gap: 16px; font-size: 18px; font-weight: 500; letter-spacing: -.01em; }
+  .faq summary .plus { flex-shrink: 0; font-size: 22px; color: #b8365f; line-height: 1; }
+  .faq p { margin: 12px 0 0; font-size: 16px; line-height: 1.6; color: #6b6661; max-width: 62ch; }
+  .tl-dot { position: absolute; left: -20px; width: 10px; height: 10px; border-radius: 50%; }
+  .tl-plus {
+    width: 20px; height: 20px; flex-shrink: 0; border-radius: 50%;
+    background: rgba(107,102,97,.12); color: #6b6661; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .h2 { margin: 0; font-size: clamp(30px, 3.6vw, 44px); line-height: 1.08; letter-spacing: -.03em; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header style="position: sticky; top: 0; z-index: 50; background: rgba(255,255,255,.72); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid rgba(28,26,24,.06)">
+  <div style="max-width: 1120px; margin: 0 auto; padding: 14px 24px; display: flex; align-items: center; gap: 24px">
+    <div style="display: flex; align-items: center; gap: 9px; margin-right: auto">
+      <span style="font-size: 21px; line-height: 1; filter: drop-shadow(0 2px 6px rgba(232,102,79,.35))">🍊</span>
+      <span class="wordmark" style="font-size: 22px">Grapefruit</span>
+    </div>
+    <nav style="display: flex; gap: 26px; align-items: center; font-size: 14px; font-weight: 500">
+      <a class="navlink" href="#product">Product</a>
+      <a class="navlink" href="#example">Example</a>
+      <a class="navlink" href="#pricing">Pricing</a>
+      <a class="navlink" href="#faq">FAQ</a>
+    </nav>
+    <a class="cta" href="#waitlist" style="font-size: 14px; padding: 9px 18px">Join the waitlist</a>
+  </div>
+</header>
+
+<section style="position: relative; padding: 120px 24px 96px; text-align: center; background: radial-gradient(760px 520px at 78% -14%, rgba(244,189,76,.30), transparent 62%), radial-gradient(720px 500px at -4% 2%, rgba(232,102,79,.22), transparent 60%), radial-gradient(700px 520px at 50% 118%, rgba(224,83,127,.16), transparent 62%), #fbf8f5">
+  <div style="max-width: 900px; margin: 0 auto">
+    <div style="display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #b8365f; background: rgba(255,255,255,.7); border: 1px solid rgba(224,83,127,.24); padding: 7px 14px; border-radius: 999px; margin-bottom: 34px">
+      <span style="width: 6px; height: 6px; border-radius: 50%; background: #e0537f"></span>
+      Private beta · invite only
+    </div>
+    <h1 style="margin: 0; font-size: clamp(40px, 6.4vw, 74px); line-height: 1.02; letter-spacing: -.035em; font-weight: 600; text-wrap: balance">Biotech screener that<br />finds binary events</h1>
+    <p style="margin: 26px auto 0; max-width: 620px; font-size: clamp(17px, 2vw, 20px); line-height: 1.5; color: #6b6661; text-wrap: pretty">Grapefruit scans the US and EU small-cap universe every week, then reads the calendar ahead of it — PDUFA dates, Phase 2/3 readouts, EMA decisions — and tells you what is about to move, and why.</p>
+
+    <div id="waitlist" style="margin: 40px auto 0; max-width: 470px">
+      <form id="waitlist-form" style="display: flex; gap: 8px; padding: 6px; border-radius: 999px; background: rgba(255,255,255,.78); border: 1px solid rgba(28,26,24,.1); box-shadow: 0 10px 34px rgba(28,26,24,.07)">
+        <input type="email" name="email" required placeholder="you@fund.com" style="flex: 1; min-width: 0; border: none; outline: none; background: transparent; font: inherit; font-size: 15px; padding: 11px 16px; color: #1c1a18" />
+        <button class="cta" type="submit" style="flex-shrink: 0; border: none; cursor: pointer; font: inherit; font-size: 15px; padding: 11px 22px">Request access</button>
+      </form>
+      <div id="waitlist-done" hidden style="padding: 18px 22px; border-radius: 999px; background: rgba(255,255,255,.8); border: 1px solid rgba(224,83,127,.28); font-size: 15px; font-weight: 500; color: #1c1a18">You're on the list. We'll email you when your seat opens.</div>
+      <p style="margin: 14px 0 0; font-size: 13px; color: #8b8681">Free during the private beta. Not financial advice.</p>
+    </div>
+  </div>
+</section>
+
+<section id="product" style="padding: 0 24px 110px; background: linear-gradient(#fbf8f5, #f4f0ec)">
+  <div style="max-width: 1180px; margin: 0 auto">
+    <div style="border-radius: 20px; overflow: hidden; background: #fdfbf9; border: 1px solid rgba(28,26,24,.08); box-shadow: 0 40px 90px -30px rgba(28,26,24,.28), 0 2px 8px rgba(28,26,24,.06)">
+      <div style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: rgba(255,255,255,.8); border-bottom: 1px solid rgba(28,26,24,.06)">
+        <span style="width: 11px; height: 11px; border-radius: 50%; background: #e8664f"></span>
+        <span style="width: 11px; height: 11px; border-radius: 50%; background: #f4bd4c"></span>
+        <span style="width: 11px; height: 11px; border-radius: 50%; background: #d9d4ce"></span>
+        <span style="margin-left: 12px; font-size: 12px; color: #8b8681">grapefruit.app / future winners</span>
+      </div>
+
+      <div style="background: radial-gradient(700px 480px at 82% -8%, rgba(244,189,76,.28), transparent 60%), radial-gradient(760px 520px at -8% 4%, rgba(232,102,79,.22), transparent 58%), #f4f0ec; padding-bottom: 22px">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 16px 24px; background: rgba(255,255,255,.72); -webkit-backdrop-filter: blur(20px) saturate(180%); backdrop-filter: blur(20px) saturate(180%); border-bottom: 1px solid rgba(255,255,255,.6)">
+          <span style="font-size: 20px">🍊</span>
+          <span style="font-family: 'Playfair Display', Georgia, serif; font-style: italic; font-weight: 600; font-size: 21px; color: #e8664f">Grapefruit</span>
+        </div>
+
+        <div style="display: flex; gap: 10px; padding: 16px 24px 0; flex-wrap: wrap">
+          <div style="flex: 1; min-width: 180px; padding: 11px 18px; border-radius: 999px; border: 1px solid rgba(28,26,24,.16); background: rgba(255,255,255,.72); font-size: 14px; color: #8b8681">Search by company name or ticker…</div>
+          <div class="pill-filter">🌍 All countries ⌄</div>
+          <div class="pill-filter">All catalysts ⌄</div>
+          <div style="padding: 10px 16px; border-radius: 999px; border: 1px solid #f4bd4c; background: #f4bd4c; color: #fff; font-size: 13px; font-weight: 700">⭐ Watchlist</div>
+        </div>
+
+        <div style="padding: 18px 24px 0">
+          <div class="glass" style="padding: 20px; border-radius: 16px">
+            <div style="display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap">
+              <div style="flex: 1 1 380px; min-width: 0">
+                <svg viewBox="0 0 560 232" style="width: 100%; height: auto; display: block" role="img" aria-label="MAAT price history with catalyst window">
+                  <g font-size="10" fill="#6b6661" font-family="-apple-system, sans-serif">
+                    <text x="42" y="11" text-anchor="end">$12</text>
+                    <text x="42" y="60" text-anchor="end">$9</text>
+                    <text x="42" y="109" text-anchor="end">$6</text>
+                    <text x="42" y="158" text-anchor="end">$3</text>
+                    <text x="42" y="208" text-anchor="end">$0</text>
+                    <text x="120" y="225" text-anchor="middle">2023-12</text>
+                    <text x="225" y="225" text-anchor="middle">2024-07</text>
+                    <text x="330" y="225" text-anchor="middle">2025-01</text>
+                    <text x="435" y="225" text-anchor="middle">2025-07</text>
+                    <text x="530" y="225" text-anchor="middle">2026-02</text>
+                  </g>
+                  <line x1="48" y1="205" x2="548" y2="205" stroke="rgba(28,26,24,.25)" stroke-width="1" />
+                  <line x1="48" y1="8" x2="48" y2="205" stroke="rgba(28,26,24,.25)" stroke-width="1" />
+                  <rect x="471.7" y="8" width="40.7" height="197" fill="#f4bd4c" fill-opacity="0.25" />
+                  <line x1="471.7" y1="8" x2="471.7" y2="205" stroke="#d79d00" stroke-width="2" />
+                  <line x1="512.4" y1="8" x2="512.4" y2="205" stroke="#d79d00" stroke-width="2" />
+                  <polyline fill="none" stroke="#e8664f" stroke-width="2" stroke-linejoin="round" points="48.0,103.2 56.1,99.9 64.3,104.9 72.4,98.3 80.6,90.1 88.7,83.5 96.9,86.8 105.0,80.2 113.2,73.7 121.3,63.8 129.5,54.0 137.6,58.9 145.8,52.3 153.9,57.3 162.1,63.8 170.2,70.4 178.4,75.3 186.5,72.0 194.7,76.9 202.8,81.9 211.0,86.8 219.1,83.5 227.2,80.2 235.4,75.3 243.5,78.6 251.7,81.9 259.8,86.8 268.0,90.1 276.1,93.4 284.3,98.3 292.4,103.2 300.6,108.1 308.7,113.1 316.9,118.0 325.0,122.9 333.2,127.8 341.3,131.1 349.5,134.4 357.6,137.7 365.8,139.3 373.9,141.0 382.0,137.7 390.2,139.3 398.3,142.6 406.5,141.0 414.6,136.1 422.8,129.5 430.9,119.6 439.1,109.8 447.2,96.7 455.4,88.4 463.5,93.4 471.7,99.9 479.8,96.7 488.0,103.2 496.1,108.1 504.3,90.1 512.4,154.1 520.6,157.4 528.7,155.8 536.9,154.9 545.0,155.8" />
+                </svg>
+              </div>
+              <div style="flex: 1 1 320px; min-width: 0">
+                <h3 style="display: flex; align-items: center; gap: 8px; margin: 0 0 5px; font-size: 18px; font-weight: 700">MAAT — Maat Pharma SA 🇫🇷 <span style="color: #f4bd4c">★</span></h3>
+                <div style="font-size: 12px; color: #6b6661; margin-bottom: 4px">Healthcare / Biotechnology</div>
+                <div style="font-size: 15px; font-weight: 600; margin-bottom: 10px">$2.88 / $70M</div>
+                <div style="font-size: 13px; line-height: 1.45; border-left: 3px solid #f4bd4c; padding: 5px 0 5px 9px; margin-bottom: 5px"><strong>Past catalyst:</strong> 2026-02-13 | ×2.0 | Trial readout</div>
+                <div style="font-size: 13px; line-height: 1.45; border-left: 3px solid #2879d0; padding: 5px 0 5px 9px"><strong>Predicted catalyst:</strong> 30 Sept 2026 | EMA re-examination decision on Xervyteg (MaaT013) conditional MAA | Expected impact: +30% (×1.3; model estimate) | Confidence: <span style="color: #b27a00; font-weight: 700">MEDIUM</span></div>
+              </div>
+            </div>
+
+            <div style="margin-top: 18px; padding-top: 16px; border-top: 1px solid rgba(107,102,97,.15)">
+              <div style="display: flex; align-items: center; gap: 16px; margin-bottom: 14px">
+                <h4 style="margin: 0; font-size: 16px; font-weight: 700">Catalyst timeline</h4>
+                <span style="padding: 8px 16px; border-radius: 999px; border: 1px solid #e8664f; background: rgba(232,102,79,.1); color: #e8664f; font-size: 13px; font-weight: 600">Ask Perplexity</span>
+              </div>
+              <div style="display: flex; flex-direction: column; gap: 13px; padding-left: 20px; position: relative">
+                <div style="position: absolute; left: 4px; top: 6px; bottom: 6px; width: 2px; background: rgba(107,102,97,.25)"></div>
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; position: relative"><span class="tl-dot" style="background: #2879d0"></span><span style="flex: 1">30 Sept 2026 — Predicted Catalyst — EMA Decision</span><span class="tl-plus">+</span></div>
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; position: relative"><span class="tl-dot" style="background: #2879d0"></span><span style="flex: 1">15 Sept 2026 — Predicted Catalyst — Earnings</span><span class="tl-plus">+</span></div>
+                <div style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; position: relative"><span class="tl-dot" style="background: #d79d00"></span><span style="flex: 1">2026-02-13 — Past Catalyst — Trial readout</span><span class="tl-plus">+</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="example" style="padding: 110px 24px; background: #f4f0ec">
+  <div style="max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 56px; align-items: center">
+    <div>
+      <div style="font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: #b8365f; margin-bottom: 18px">One card, one thesis</div>
+      <h2 class="h2" style="margin-bottom: 20px; text-wrap: balance">Every catalyst comes with its evidence attached</h2>
+      <p style="margin: 0 0 18px; font-size: 17px; line-height: 1.55; color: #6b6661; text-wrap: pretty">The screener narrows the universe on liquidity and 180-day momentum. Then a forward scan reads the next 1–90 days for events that can re-rate a name: regulatory decisions, topline readouts, spin-offs, guidance.</p>
+      <p style="margin: 0; font-size: 17px; line-height: 1.55; color: #6b6661; text-wrap: pretty">Each entry keeps its date, expected impact, confidence and source — so you can disagree with it on the record.</p>
+    </div>
+    <div class="glass" style="padding: 22px; border-radius: 18px; background: rgba(255,255,255,.72); border-color: rgba(255,255,255,.7)">
+      <h3 style="display: flex; align-items: baseline; gap: 8px; margin: 0 0 4px; font-size: 17px; font-weight: 700">IVEVF — Inventiva S.A 🇺🇸</h3>
+      <div style="font-size: 12px; color: #6b6661">Healthcare / Biotechnology</div>
+      <div style="font-size: 15px; font-weight: 600; margin: 6px 0 16px">$3.59 / $848M</div>
+      <div style="display: flex; flex-direction: column; gap: 10px; padding-left: 20px; position: relative">
+        <div style="position: absolute; left: 4px; top: 8px; bottom: 8px; width: 2px; background: rgba(107,102,97,.25)"></div>
+        <details>
+          <summary style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; position: relative">
+            <span class="tl-dot" style="top: 5px; background: #2879d0"></span>
+            <span style="flex: 1">Date unknown — Predicted Catalyst — Phase 3 readout</span>
+            <span class="plus tl-plus">+</span>
+          </summary>
+          <div style="font-size: 13.5px; line-height: 1.55; color: #3a3733; padding: 8px 0 4px">
+            <p style="margin: 0 0 6px"><strong>Lanifibranor NATiV3 Phase 3 topline readout</strong></p>
+            <p style="margin: 0 0 6px">Topline data in MASH from the pivotal NATiV3 trial. A positive readout would be the first regulatory-grade pan-PPAR result in the indication; a miss removes the core of the equity story.</p>
+            <p style="margin: 0">Expected impact: +30% (×1.3; model estimate) | Confidence: <span style="color: #b27a00; font-weight: 700">MEDIUM</span> | Status: pending</p>
+          </div>
+        </details>
+        <details>
+          <summary style="display: flex; align-items: center; gap: 10px; font-size: 13.5px; font-weight: 700; position: relative">
+            <span class="tl-dot" style="top: 5px; background: #d79d00"></span>
+            <span style="flex: 1">2026-02-13 — Past Catalyst — Trial readout</span>
+            <span class="plus tl-plus">+</span>
+          </summary>
+          <div style="font-size: 13.5px; line-height: 1.55; color: #3a3733; padding: 8px 0 4px">
+            <p style="margin: 0 0 8px">The stock doubled inside a week and held the level after the readout landed ahead of consensus.</p>
+            <div style="font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: #6b6661; font-weight: 700; margin-bottom: 4px">Was it foreseeable?</div>
+            <span style="display: inline-block; background: rgba(31,138,76,.15); color: #1f8a4c; padding: 2px 8px; border-radius: 4px; font-size: 12px; font-weight: 600">Yes</span>
+            <p style="margin: 6px 0 0">The trial completion date was public and the event window was on the calendar three weeks before the move.</p>
+          </div>
+        </details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="pricing" style="padding: 110px 24px; background: #fbf8f5">
+  <div style="max-width: 1120px; margin: 0 auto">
+    <div style="text-align: center; max-width: 620px; margin: 0 auto 56px">
+      <h2 class="h2" style="margin-bottom: 16px">Pricing</h2>
+      <p style="margin: 0; font-size: 17px; line-height: 1.55; color: #6b6661">Free while we're in private beta. These are the launch prices — beta testers keep the founding rate.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; max-width: 760px; margin: 0 auto">
+      <div style="padding: 30px 26px; border-radius: 18px; background: #fff; border: 1px solid rgba(224,83,127,.35); box-shadow: 0 20px 50px -22px rgba(224,83,127,.4), 0 2px 10px rgba(28,26,24,.05); position: relative">
+        <div style="position: absolute; top: -11px; left: 26px; font-size: 11px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: #fff; padding: 5px 12px; border-radius: 999px; background: linear-gradient(135deg, #e8664f, #e0537f)">Most useful</div>
+        <div style="font-size: 14px; font-weight: 600; color: #6b6661; margin-bottom: 14px">Operator</div>
+        <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 22px"><span style="font-size: 42px; font-weight: 600; letter-spacing: -.03em">€9</span><span style="font-size: 14px; color: #8b8681">/ month</span></div>
+        <div style="display: flex; flex-direction: column; gap: 11px; font-size: 14.5px; line-height: 1.45; color: #3a3733; margin-bottom: 26px">
+          <div>Full universe, US + EU</div>
+          <div>Forward catalyst scan, 1–90 days</div>
+          <div>Ask Perplexity on any name</div>
+          <div>Unlimited watchlist + email alerts</div>
+        </div>
+        <a class="cta" href="#waitlist" style="display: block; text-align: center; padding: 12px; font-size: 14.5px">Join the waitlist</a>
+      </div>
+      <div style="padding: 30px 26px; border-radius: 18px; background: #fff; border: 1px solid rgba(28,26,24,.08); box-shadow: 0 2px 10px rgba(28,26,24,.05)">
+        <div style="font-size: 14px; font-weight: 600; color: #6b6661; margin-bottom: 14px">Desk</div>
+        <div style="display: flex; align-items: baseline; gap: 6px; margin-bottom: 22px"><span style="font-size: 42px; font-weight: 600; letter-spacing: -.03em">€29</span><span style="font-size: 14px; color: #8b8681">/ month</span></div>
+        <div style="display: flex; flex-direction: column; gap: 11px; font-size: 14.5px; line-height: 1.45; color: #3a3733; margin-bottom: 26px">
+          <div>Everything in Operator</div>
+          <div>Prediction hit-rate history</div>
+          <div>CSV + API access to the screener</div>
+          <div>Three seats</div>
+        </div>
+        <a class="cta-ghost" href="#waitlist" style="display: block; text-align: center; padding: 12px; font-size: 14.5px; font-weight: 600">Join the waitlist</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="faq" style="padding: 110px 24px; background: #f4f0ec">
+  <div style="max-width: 780px; margin: 0 auto">
+    <h2 class="h2" style="margin-bottom: 48px; text-align: center">Questions</h2>
+    <div style="display: flex; flex-direction: column; gap: 2px">
+      <details class="faq">
+        <summary><span style="flex: 1">Where does the data come from?</span><span class="plus">+</span></summary>
+        <p>Prices, fundamentals and the symbol universe come from EODHD. Forward-looking catalysts are researched with Perplexity's sonar-pro and stored with their source links, so every claim on a card is traceable.</p>
+      </details>
+      <details class="faq">
+        <summary><span style="flex: 1">How often does it refresh?</span><span class="plus">+</span></summary>
+        <p>The full pipeline runs Monday mornings — universe, fundamentals, bars, winner detection, catalyst scan. Prices refresh nightly, so the dashboard has yesterday's close every morning.</p>
+      </details>
+      <details class="faq">
+        <summary><span style="flex: 1">What counts as a past winner?</span><span class="plus">+</span></summary>
+        <p>A ticker that rose 5× or more in under a week and held the new level. Grapefruit then asks why it happened and whether it was foreseeable beforehand — that second answer is the useful one.</p>
+      </details>
+      <details class="faq">
+        <summary><span style="flex: 1">Is the survivorship bias handled?</span><span class="plus">+</span></summary>
+        <p>No, and we say so on the card. The symbol list is dominated by currently active tickers, so names that ran and then delisted, got acquired or went bankrupt are largely absent. Treat every past winner as filtered through survival.</p>
+      </details>
+      <details class="faq" style="border-bottom: 1px solid rgba(28,26,24,.1)">
+        <summary><span style="flex: 1">Can I get in now?</span><span class="plus">+</span></summary>
+        <p>The beta is invite-only while the catalyst scan is being tuned. Leave your email and we'll open seats in small batches.</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<section style="padding: 110px 24px; text-align: center; background: radial-gradient(700px 460px at 50% 120%, rgba(224,83,127,.2), transparent 62%), radial-gradient(620px 420px at 12% -10%, rgba(244,189,76,.24), transparent 60%), #fbf8f5">
+  <h2 style="margin: 0 auto 20px; max-width: 700px; font-size: clamp(30px, 4vw, 50px); line-height: 1.06; letter-spacing: -.03em; font-weight: 600; text-wrap: balance">Know what's on the calendar before the chart does</h2>
+  <p style="margin: 0 auto 34px; max-width: 520px; font-size: 17px; line-height: 1.55; color: #6b6661">Free during the private beta.</p>
+  <a class="cta" href="#waitlist" style="display: inline-block; font-size: 16px; padding: 15px 34px">Join the waitlist</a>
+</section>
+
+<footer style="padding: 56px 24px 44px; background: #f4f0ec; border-top: 1px solid rgba(28,26,24,.08); color: #6b6661">
+  <div style="max-width: 1120px; margin: 0 auto">
+    <div style="display: flex; gap: 32px; flex-wrap: wrap; align-items: center; padding-bottom: 28px; border-bottom: 1px solid rgba(28,26,24,.1)">
+      <div style="display: flex; align-items: center; gap: 9px; margin-right: auto">
+        <span style="font-size: 19px">🍊</span>
+        <span class="wordmark" style="font-size: 21px">Grapefruit</span>
+      </div>
+      <div style="display: flex; gap: 26px; font-size: 14px">
+        <a class="navlink" href="#product">Product</a>
+        <a class="navlink" href="#pricing">Pricing</a>
+        <a class="navlink" href="#faq">FAQ</a>
+        <a class="navlink" href="mailto:hello@grapefruit.app">Contact</a>
+      </div>
+    </div>
+    <p style="margin: 24px 0 0; font-size: 12.5px; line-height: 1.6; max-width: 78ch; color: #7a746e">Grapefruit is an equity research tool, not financial advice. Nothing here is a recommendation to buy or sell any security. Expected-impact figures are model estimates, not forecasts, and forward-looking catalysts are generated by a language model and may be wrong, stale or incomplete. Past winners are detected on a survivorship-biased symbol universe. Do your own research; you are responsible for your own trades.</p>
+    <p style="margin: 14px 0 0; font-size: 12.5px; color: #8b8681">© 2026 Grapefruit</p>
+  </div>
+</footer>
+
+<script>
+  // Waitlist submit — swap in a real endpoint (POST /api/waitlist, Formspark, Resend…).
+  document.getElementById('waitlist-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var email = new FormData(e.target).get('email');
+    console.log('waitlist signup:', email);
+    e.target.hidden = true;
+    document.getElementById('waitlist-done').hidden = false;
+  });
+</script>
+</body>
+</html>

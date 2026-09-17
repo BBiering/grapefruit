@@ -1,10 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "cd frontend && npm ci && npm run build",
+  "buildCommand": "cd frontend && npm ci && npm run build && mkdir -p dist/app && mv dist/index.html dist/app/index.html && cp ../index.html dist/index.html",
   "outputDirectory": "frontend/dist",
   "installCommand": "true",
   "framework": null,
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/app", "destination": "/app/index.html" },
+    { "source": "/app/(.*)", "destination": "/app/index.html" }
   ]
 }
