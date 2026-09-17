@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
-  LineChart, Line, Scatter, ResponsiveContainer, XAxis, YAxis, Tooltip,
+  LineChart, Line, Customized, ResponsiveContainer, XAxis, YAxis, Tooltip,
 } from "recharts";
 import { supabase } from "../supabase";
 import type { ChartEvent } from "../types";
@@ -41,7 +42,7 @@ async function fetchBars(symbol: string): Promise<Bar[]> {
 function EventPopover({ event, dateLabel }: { event: ChartEvent; dateLabel: string }) {
   const title = event.event_name || event.headline || event.impact_type || "Catalyst";
   return (
-    <div className="event-popover">
+    <div>
       <div className="ep-row">
         <span className={`ep-kind ${event.kind}`}>
           {event.kind === "past" ? "Past move" : "Predicted"}
@@ -78,31 +79,10 @@ function EventPopover({ event, dateLabel }: { event: ChartEvent; dateLabel: stri
   );
 }
 
-// One shared tooltip: shows the floating event window over a dot, or the
-// plain price popover anywhere else on the line.
-function ChartTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload?: unknown }> }) {
-  if (!active || !payload?.length) return null;
-  const ev = payload.find((p) => (p.payload as EventPoint | undefined)?.event)?.payload as EventPoint | undefined;
-  if (ev) {
-    return <EventPopover event={ev.event} dateLabel={displayCatalystDate(ev.event.date)} />;
-  }
-  const point = payload[0]?.payload as Point | undefined;
-  if (point && point.close != null) {
-    return (
-      <div className="price-popover">
-        <div className="ep-date">{new Date(point.x).toISOString().slice(0, 10)}</div>
-        <div className="ep-title">${point.close.toFixed(2)}</div>
-      </div>
-    );
-  }
-  return null;
-}
-
-function eventDotShape(props: { cx?: number; cy?: number; fill?: string }) {
-  return <circle cx={props.cx} cy={props.cy} r={5} fill={props.fill} stroke="#fff" strokeWidth={1.5} />;
-}
-
 export function MiniChart({ symbol, events }: MiniChartProps) {
+  // Hovered event + dot screen position (client coords for fixed popover).
+  const [hover, setHover] = useState<{ event: ChartEvent; x: number; y: number } | null>(null);
+
   const { data: bars = [] } = useQuery({
     queryKey: ["bars-mini", symbol],
     queryFn: () => fetchBars(symbol),
@@ -148,6 +128,40 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
 
   const chartMax = eventPoints.reduce((m, p) => Math.max(m, p.x), maxX);
 
+  // Drawn via Customized (recharts Scatter silently drops its data inside a
+  // LineChart in 2.15): xAxis/offset give us the real scales, so we place the
+  // dots ourselves and handle hover natively.
+  function renderDots(state: { xAxisMap?: Record<string, { scale: (v: number) => number }>; yAxisMap?: Record<string, { scale: (v: number) => number }> }) {
+    const xAxis = state.xAxisMap?.["0"];
+    const yAxis = state.yAxisMap?.["0"];
+    if (!xAxis || !yAxis || !eventPoints.length) return null;
+    return (
+      <g>
+        {eventPoints.map((p) => {
+          const cx = xAxis.scale(p.x);
+          const cy = yAxis.scale(p.y);
+          return (
+            <circle
+              key={p.event.id}
+              cx={cx}
+              cy={cy}
+              r={5}
+              fill={KIND_COLORS[p.event.kind]}
+              stroke="#fff"
+              strokeWidth={1.5}
+              style={{ cursor: "pointer" }}
+              onMouseEnter={(e) => {
+                const rect = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect();
+                setHover({ event: p.event, x: rect.left + cx, y: rect.top + cy });
+              }}
+              onMouseLeave={() => setHover(null)}
+            />
+          );
+        })}
+      </g>
+    );
+  }
+
   return (
     <div className="chart-frame">
       <ResponsiveContainer width="100%" height={240}>
@@ -162,7 +176,8 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
           />
           <YAxis width={48} tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toFixed(0)}`} />
           <Tooltip
-            content={<ChartTooltip />}
+            labelFormatter={(value: number) => new Date(value).toISOString().slice(0, 10)}
+            formatter={(value) => [value == null ? "—" : `$${Number(value).toFixed(2)}`, "Close"]}
             cursor={{ stroke: "#6b6661", strokeWidth: 1, strokeDasharray: "4 3" }}
           />
           <Line
@@ -174,26 +189,24 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
             connectNulls={false}
             isAnimationActive={false}
           />
-          {eventPoints.some((p) => p.event.kind === "past") && (
-            <Scatter
-              data={eventPoints.filter((p) => p.event.kind === "past")}
-              dataKey="y"
-              fill={KIND_COLORS.past}
-              shape={eventDotShape}
-              isAnimationActive={false}
-            />
-          )}
-          {eventPoints.some((p) => p.event.kind === "predicted") && (
-            <Scatter
-              data={eventPoints.filter((p) => p.event.kind === "predicted")}
-              dataKey="y"
-              fill={KIND_COLORS.predicted}
-              shape={eventDotShape}
-              isAnimationActive={false}
-            />
-          )}
+          <Customized component={renderDots} />
         </LineChart>
       </ResponsiveContainer>
+
+      {hover && (
+        <div
+          className="event-popover"
+          style={{
+            position: "fixed",
+            left: hover.x - 20,
+            top: hover.y - 14,
+            transform: "translate(-100%, -100%)",
+            zIndex: 60,
+          }}
+        >
+          <EventPopover event={hover.event} dateLabel={displayCatalystDate(hover.event.date)} />
+        </div>
+      )}
     </div>
   );
 }
