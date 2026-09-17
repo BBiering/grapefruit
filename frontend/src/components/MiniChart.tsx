@@ -160,7 +160,7 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
             minTickGap={45}
             tickFormatter={(v: number) => new Date(v).toISOString().slice(0, 7)}
           />
-          <YAxis width={48} dataKey="y" tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toFixed(0)}`} />
+          <YAxis width={48} tick={{ fontSize: 10 }} tickFormatter={(v) => `$${Number(v).toFixed(0)}`} />
           <Tooltip
             content={<ChartTooltip />}
             cursor={{ stroke: "#6b6661", strokeWidth: 1, strokeDasharray: "4 3" }}
@@ -174,20 +174,24 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
             connectNulls={false}
             isAnimationActive={false}
           />
-          <Scatter
-            data={eventPoints.filter((p) => p.event.kind === "past")}
-            dataKey="y"
-            fill={KIND_COLORS.past}
-            shape={eventDotShape}
-            isAnimationActive={false}
-          />
-          <Scatter
-            data={eventPoints.filter((p) => p.event.kind === "predicted")}
-            dataKey="y"
-            fill={KIND_COLORS.predicted}
-            shape={eventDotShape}
-            isAnimationActive={false}
-          />
+          {eventPoints.some((p) => p.event.kind === "past") && (
+            <Scatter
+              data={eventPoints.filter((p) => p.event.kind === "past")}
+              dataKey="y"
+              fill={KIND_COLORS.past}
+              shape={eventDotShape}
+              isAnimationActive={false}
+            />
+          )}
+          {eventPoints.some((p) => p.event.kind === "predicted") && (
+            <Scatter
+              data={eventPoints.filter((p) => p.event.kind === "predicted")}
+              dataKey="y"
+              fill={KIND_COLORS.predicted}
+              shape={eventDotShape}
+              isAnimationActive={false}
+            />
+          )}
         </LineChart>
       </ResponsiveContainer>
     </div>
