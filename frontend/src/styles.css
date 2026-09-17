@@ -1845,7 +1845,8 @@ code {
 /* --- chart event dots: floating hover window --- */
 .event-popover {
   background: rgba(255,255,255,.97); border: 1px solid rgba(28,26,24,.12); border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(28,26,24,.18); padding: 12px 14px; max-width: 320px; pointer-events: none;
+  box-shadow: 0 8px 28px rgba(28,26,24,.18); padding: 12px 14px; max-width: 340px;
+  max-height: min(55vh, 420px); overflow-y: auto; pointer-events: auto;
 }
 .ep-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .ep-kind {

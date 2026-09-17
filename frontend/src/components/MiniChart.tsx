@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
   LineChart, Line, Customized, ResponsiveContainer, XAxis, YAxis, Tooltip,
@@ -80,8 +81,25 @@ function EventPopover({ event, dateLabel }: { event: ChartEvent; dateLabel: stri
 }
 
 export function MiniChart({ symbol, events }: MiniChartProps) {
-  // Hovered event + dot screen position (client coords for fixed popover).
-  const [hover, setHover] = useState<{ event: ChartEvent; x: number; y: number } | null>(null);
+  // Hovered event + placement (client coords for a body-portaled popover,
+  // which escapes the card's backdrop-filter/overflow clipping context).
+  const [hover, setHover] = useState<{
+    event: ChartEvent;
+    left: number;
+    top: number;
+    flipX: boolean; // put popover right of the dot instead of left
+    flipY: boolean; // put popover below the dot instead of above
+  } | null>(null);
+  const closeTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (closeTimer.current) window.clearTimeout(closeTimer.current); }, []);
+
+  const scheduleClose = () => {
+    if (closeTimer.current) window.clearTimeout(closeTimer.current);
+    closeTimer.current = window.setTimeout(() => setHover(null), 200);
+  };
+  const cancelClose = () => {
+    if (closeTimer.current) { window.clearTimeout(closeTimer.current); closeTimer.current = null; }
+  };
 
   const { data: bars = [] } = useQuery({
     queryKey: ["bars-mini", symbol],
@@ -151,10 +169,15 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
               strokeWidth={1.5}
               style={{ cursor: "pointer" }}
               onMouseEnter={(e) => {
+                cancelClose();
                 const rect = (e.currentTarget.ownerSVGElement as SVGSVGElement).getBoundingClientRect();
-                setHover({ event: p.event, x: rect.left + cx, y: rect.top + cy });
+                const x = rect.left + cx;
+                const y = rect.top + cy;
+                const flipX = x < 350; // popover (~340px) would leave the left edge
+                const flipY = y < 180; // popover (up to ~55vh) would leave the top edge
+                setHover({ event: p.event, left: x, top: y, flipX, flipY });
               }}
-              onMouseLeave={() => setHover(null)}
+              onMouseLeave={scheduleClose}
             />
           );
         })}
@@ -193,20 +216,26 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
         </LineChart>
       </ResponsiveContainer>
 
-      {hover && (
-        <div
-          className="event-popover"
-          style={{
-            position: "fixed",
-            left: hover.x - 20,
-            top: hover.y - 14,
-            transform: "translate(-100%, -100%)",
-            zIndex: 60,
-          }}
-        >
-          <EventPopover event={hover.event} dateLabel={displayCatalystDate(hover.event.date)} />
-        </div>
-      )}
+      {hover &&
+        createPortal(
+          <div
+            className="event-popover"
+            style={{
+              position: "fixed",
+              left: hover.flipX ? hover.left + 14 : hover.left - 10,
+              top: hover.flipY ? hover.top + 16 : hover.top - 8,
+              transform: hover.flipX
+                ? (hover.flipY ? "none" : "translateY(-100%)")
+                : (hover.flipY ? "translateX(-100%)" : "translate(-100%, -100%)"),
+              zIndex: 9999,
+            }}
+            onMouseEnter={cancelClose}
+            onMouseLeave={scheduleClose}
+          >
+            <EventPopover event={hover.event} dateLabel={displayCatalystDate(hover.event.date)} />
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }
