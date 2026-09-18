@@ -1,5 +1,6 @@
 import { useState } from "react";
-import type { CompanyCard as CompanyCardType, ModelNews } from "../types";
+import { createPortal } from "react-dom";
+import type { CompanyCard as CompanyCardType } from "../types";
 import {
   displaySymbol, formatPrice, formatMoney, exchangeToFlag,
   displayCatalystDate, timeHorizon, pickNextEvent,
@@ -12,52 +13,73 @@ interface Props {
   company: CompanyCardType;
 }
 
-const AI_PROVIDERS = [
-  { id: "openai", label: "ChatGPT" },
-  { id: "anthropic", label: "Claude" },
-  { id: "gemini", label: "Gemini" },
-] as const;
+type NewsState =
+  | { status: "idle" }
+  | { status: "loading" }
+  | { status: "error"; error: string }
+  | { status: "done"; content: string; model?: string };
 
-type AiStatus =
-  | { provider: string; label: string; status: "loading" }
-  | { provider: string; label: string; status: "error"; message: string }
-  | { provider: string; label: string; status: "done"; result: ModelNews };
+// Minimal markdown-ish rendering for the Gemini profile: numbered/## lines
+// become section headings, bullets stay bullets, everything else is prose.
+function formattedSections(text: string) {
+  return text.split("\n").map((raw, i) => {
+    const t = raw.trim();
+    if (!t) return null;
+    if (/^\d+\./.test(t) || /^#{1,3}\s/.test(t)) {
+      return (
+        <h5 className="pf-h" key={i}>
+          {t.replace(/^#+\s*/, "").replace(/\*\*/g, "")}
+        </h5>
+      );
+    }
+    if (/^[-•·*]\s/.test(t)) {
+      return (
+        <div className="pf-li" key={i}>
+          {t.replace(/^[-•·*]\s*/, "• ").replace(/\*\*/g, "")}
+        </div>
+      );
+    }
+    return (
+      <p className="pf-p" key={i}>
+        {t.replace(/\*\*/g, "")}
+      </p>
+    );
+  });
+}
 
 export function CompanyCard({ company }: Props) {
   const { data: watchlist } = useWatchlist();
-  const [ai, setAi] = useState<AiStatus | null>(null);
+  const [news, setNews] = useState<NewsState>({ status: "idle" });
 
   const next = pickNextEvent(company.predicted_catalysts);
 
-  async function askAi(provider: string, label: string) {
-    setAi({ provider, label, status: "loading" });
+  async function askNews() {
+    setNews({ status: "loading" });
     try {
-      const res = await fetch("/api/model-news", {
+      const res = await fetch("/api/gemini-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          provider,
           symbol: company.symbol,
           name: company.name,
           exchange: company.exchange,
           sector: company.sector,
           context: [
-            `Current price: ${formatPrice(company.last_close)}`,
+            `Last close: ${formatPrice(company.last_close)}`,
+            `Market cap: ${formatMoney(company.market_cap_usd)}`,
             next
-              ? `Next binary event: ${next.event_name || next.impact_type || "catalyst"}${next.date ? ` — ${timeHorizon(next.date)}` : ""}`
+              ? `Next binary event: ${next.event_name || next.impact_type || "catalyst"}${next.date ? ` (${timeHorizon(next.date)})` : ""}`
               : "No upcoming catalyst detected",
           ].join("\n"),
         }),
       });
-      const data = (await res.json()) as ModelNews;
+      const data = (await res.json()) as { content?: string; error?: string };
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setAi({ provider, label, status: "done", result: data });
+      setNews({ status: "done", content: data.content || "" });
     } catch (err) {
-      setAi({
-        provider,
-        label,
+      setNews({
         status: "error",
-        message: err instanceof Error ? err.message : "Request failed",
+        error: err instanceof Error ? err.message : "Request failed",
       });
     }
   }
@@ -89,7 +111,9 @@ export function CompanyCard({ company }: Props) {
               {next.impact_type && next.event_name && next.event_name !== next.impact_type && (
                 <div className="ne-name">{next.event_name}</div>
               )}
-              <div className="ne-horizon">Time horizon: {timeHorizon(next.date?.trim() ? next.date : next.event_name)}</div>
+              <div className="ne-horizon">
+                Time horizon: {timeHorizon(next.date?.trim() ? next.date : next.event_name)}
+              </div>
             </div>
           ) : company.past_catalyst ? (
             <div className="catalyst-line muted">
@@ -99,38 +123,32 @@ export function CompanyCard({ company }: Props) {
           ) : (
             <div className="catalyst-line muted">No catalysts detected</div>
           )}
+
+          <button className="news-btn" onClick={askNews} disabled={news.status === "loading"}>
+            🗞️ News
+          </button>
         </div>
       </div>
 
-      <div className="card-ai">
-        <div className="ai-head">
-          <h4 className="ai-title">Latest news &amp; pros/cons</h4>
-          <div className="ai-buttons">
-            {AI_PROVIDERS.map((p) => (
-              <button
-                key={p.id}
-                className="ai-btn"
-                disabled={ai?.status === "loading"}
-                onClick={() => askAi(p.id, p.label)}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {ai?.status === "loading" && (
-          <div className="ai-result muted">Querying {ai.label} for the latest news…</div>
+      {news.status !== "idle" &&
+        createPortal(
+          <div className="news-overlay" onClick={() => setNews({ status: "idle" })}>
+            <div className="news-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="news-modal-head">
+                <h4 className="news-modal-title">Grapefruit · {displaySymbol(company.symbol)} — Gemini profile</h4>
+                <button className="news-close" onClick={() => setNews({ status: "idle" })} aria-label="Close">
+                  ✕
+                </button>
+              </div>
+              <div className="news-modal-body">
+                {news.status === "loading" && <div className="muted">Gemini is researching {company.name}…</div>}
+                {news.status === "error" && <div className="ai-error">{news.error}</div>}
+                {news.status === "done" && news.content && formattedSections(news.content)}
+              </div>
+            </div>
+          </div>,
+          document.body,
         )}
-        {ai?.status === "error" && (
-          <div className="ai-result ai-error">{ai.message}</div>
-        )}
-        {ai?.status === "done" && ai.result && (
-          <div className="ai-result">
-            <pre className="ai-text">{ai.result.content}</pre>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
