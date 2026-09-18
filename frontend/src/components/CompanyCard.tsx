@@ -183,7 +183,7 @@ export function CompanyCard({ company }: Props) {
           <div className="news-overlay" onClick={() => setNews({ status: "idle" })}>
             <div className="news-modal" onClick={(e) => e.stopPropagation()}>
               <div className="news-modal-head">
-                <h4 className="news-modal-title">Grapefruit · {displaySymbol(company.symbol)} — Gemini profile</h4>
+                <h4 className="news-modal-title">Latest News about {company.name} - Powered by Gemini</h4>
                 <button className="news-close" onClick={() => setNews({ status: "idle" })} aria-label="Close">
                   ✕
                 </button>
