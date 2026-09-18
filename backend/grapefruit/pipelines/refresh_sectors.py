@@ -39,6 +39,7 @@ def run() -> int:
     for symbol in symbols:
         # Record the attempt first so a later cleanup can tell "never tried"
         # from "tried and EODHD had no data".
+        already_tried = storage.sector_tried_once(symbol)
         storage.mark_sector_attempted(symbol)
         try:
             fund = eodhd_client.fetch_fundamentals(symbol)
@@ -47,7 +48,13 @@ def run() -> int:
             continue
 
         if not fund:
-            # No data: leave NULL, retry on a later run.
+            # No data: leave NULL on the first attempt; a second attempt with
+            # no data means EODHD has nothing for this (usually an ADR/cross-
+            # listing) — tombstone it instead of retrying forever.
+            if already_tried:
+                storage.exclude_symbol(symbol)
+                storage.delete_asset(symbol)
+                pruned += 1
             continue
 
         general = fund.get("General") or {}
@@ -55,12 +62,18 @@ def run() -> int:
         industry = (general.get("Industry") or "").strip()
 
         if not sector and not industry:
-            # Undetermined: leave NULL, retry on a later run.
+            # Undetermined: same two-attempt policy as above.
+            if already_tried:
+                storage.exclude_symbol(symbol)
+                storage.delete_asset(symbol)
+                pruned += 1
             continue
 
         if industry != "Biotechnology":
-            # Definitively not biotech: drop now, with its bars (FK cascade
+            # Definitively not biotech: tombstone so refresh_universe never
+            # re-admits it from the bulk feeds, then drop it (FK cascade
             # removes step changes / catalysts too).
+            storage.exclude_symbol(symbol)
             storage.delete_asset(symbol)
             pruned += 1
             continue

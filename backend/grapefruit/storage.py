@@ -197,6 +197,11 @@ def init_db() -> None:
         # above). Public tool, no auth: anon can read/write it via Supabase.
         cur.execute(
             """
+            CREATE TABLE IF NOT EXISTS excluded_symbols (
+                symbol TEXT PRIMARY KEY,
+                pruned_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            );
+
             CREATE TABLE IF NOT EXISTS watchlist (
                 symbol TEXT PRIMARY KEY REFERENCES assets(symbol) ON DELETE CASCADE,
                 added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -919,3 +924,29 @@ def prune_assets_below_min_cap(min_cap_usd: float) -> dict[str, int]:
             )
             assets_deleted = cur.rowcount
     return {"assets": assets_deleted, "bars": bars_deleted}
+
+
+def exclude_symbol(symbol: str) -> None:
+    """Tombstone a symbol classified as non-biotech so refresh_universe does
+    not re-admit it from the bulk feeds on the next run."""
+    with _cur() as cur:
+        cur.execute(
+            "INSERT INTO excluded_symbols (symbol) VALUES (%s) ON CONFLICT DO NOTHING",
+            [symbol],
+        )
+
+
+def excluded_symbols() -> set[str]:
+    with _cur() as cur:
+        cur.execute("SELECT symbol FROM excluded_symbols")
+        return {r[0] for r in cur.fetchall()}
+
+
+def sector_tried_once(symbol: str) -> bool:
+    """True if refresh_sectors has attempted this symbol before. A second
+    attempt that still yields no industry is tombstoned as unclassifiable
+    junk instead of being retried forever."""
+    with _cur() as cur:
+        cur.execute("SELECT sector_attempted_at IS NOT NULL FROM assets WHERE symbol = %s", [symbol])
+        row = cur.fetchone()
+        return bool(row and row[0])

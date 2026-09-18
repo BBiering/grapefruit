@@ -59,6 +59,8 @@ def run() -> int:
     now = datetime.now(timezone.utc)
     rows: list[dict] = []
     seen_isins: set[str] = set()
+    # Never re-admit symbols refresh_sectors already classified as non-biotech.
+    excluded = storage.excluded_symbols()
 
     for exchange in eodhd_client.EXCHANGES:
         price_ceiling = MAX_NATIVE_PRICE.get(exchange, 85.0)
@@ -77,6 +79,8 @@ def run() -> int:
         for r in raw:
             code = r.get("code") or r.get("Code")
             if not code or code not in native:
+                continue
+            if code in excluded:
                 continue
             # Skip class-suffixed / preferred-style tickers.
             if "/" in code or "." in code:
