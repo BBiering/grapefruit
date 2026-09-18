@@ -16,6 +16,7 @@ interface Props {
 type NewsState =
   | { status: "idle" }
   | { status: "loading" }
+  | { status: "streaming"; text: string }
   | { status: "error"; error: string }
   | { status: "done"; content: string; model?: string };
 
@@ -56,7 +57,7 @@ export function CompanyCard({ company }: Props) {
   async function askNews() {
     setNews({ status: "loading" });
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 70_000);
+    const timer = setTimeout(() => ctrl.abort(), 75_000);
     try {
       const res = await fetch("/api/gemini-profile", {
         method: "POST",
@@ -76,24 +77,55 @@ export function CompanyCard({ company }: Props) {
           ].join("\n"),
         }),
       });
-      const raw = await res.text();
-      let data: { content?: string; error?: string } = {};
-      try {
-        data = JSON.parse(raw);
-      } catch {
-        throw new Error(raw.trim().slice(0, 300) || `HTTP ${res.status}`);
+
+      // The profile streams as NDJSON deltas: {"d":"<text>"}
+      if (!res.ok || !res.body) {
+        const raw = await res.text().catch(() => "");
+        let data: { error?: string } = {};
+        try { data = JSON.parse(raw); } catch { /* non-JSON body */ }
+        throw new Error(data.error || raw.trim().slice(0, 300) || `HTTP ${res.status}`);
       }
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setNews({ status: "done", content: data.content || "" });
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let text = "";
+      let error = "";
+      setNews({ status: "streaming", text: "" });
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          let row: { d?: string; error?: string };
+          try { row = JSON.parse(line); } catch { continue; }
+          if (row.d) {
+            text += row.d;
+            setNews({ status: "streaming", text });
+          }
+          if (row.error) error = row.error;
+        }
+      }
+      if (error) throw new Error(error);
+      if (!text.trim()) throw new Error("model returned an empty answer");
+      setNews({ status: "done", content: text });
     } catch (err) {
-      setNews({
-        status: "error",
-        error:
-          err instanceof DOMException && err.name === "AbortError"
-            ? "The request timed out after 70s. The model may be slow; try again."
-            : err instanceof Error
-              ? err.message
-              : "Request failed",
+      setNews((prev) => {
+        // Keep whatever streamed in if we were interrupted mid-profile.
+        if (prev.status === "streaming" && prev.text.trim()) {
+          const note = `\n\n[generation stopped: ${err instanceof Error ? err.message : "error"}]`;
+          return { status: "done", content: prev.text + note };
+        }
+        return {
+          status: "error",
+          error:
+            err instanceof DOMException && err.name === "AbortError"
+              ? "The request timed out after 75s. Try again."
+              : err instanceof Error ? err.message : "Request failed",
+        };
       });
     } finally {
       clearTimeout(timer);
@@ -140,7 +172,7 @@ export function CompanyCard({ company }: Props) {
             <div className="catalyst-line muted">No catalysts detected</div>
           )}
 
-          <button className="news-btn" onClick={askNews} disabled={news.status === "loading"}>
+          <button className="news-btn" onClick={askNews} disabled={news.status === "loading" || news.status === "streaming"}>
             🗞️ News
           </button>
         </div>
@@ -158,6 +190,12 @@ export function CompanyCard({ company }: Props) {
               </div>
               <div className="news-modal-body">
                 {news.status === "loading" && <div className="muted">Gemini is researching {company.name}…</div>}
+                {news.status === "streaming" && (
+                  <>
+                    {formattedSections(news.text)}
+                    <div className="muted pf-stream">generating…</div>
+                  </>
+                )}
                 {news.status === "error" && <div className="ai-error">{news.error}</div>}
                 {news.status === "done" && news.content && formattedSections(news.content)}
               </div>

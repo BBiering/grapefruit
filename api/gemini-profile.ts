@@ -1,18 +1,18 @@
 // Vercel serverless function: per-company research profile from Gemini,
 // served through Google's Gemini Enterprise Agent Platform (aiplatform).
-// POST { symbol, name, exchange, sector, context } -> { content, model }.
+// POST { symbol, name, exchange, sector, context } -> streams NDJSON deltas:
+//   {"d":"<incremental text>"}  ...  EOF  |  {"error":"..."}
 // Used by the "🗞 News" button. Auth: Google Cloud API key via x-goog-api-key
 // (GOOGLE_GEMINI_API_KEY in Vercel env; project GOOGLE_CLOUD_PROJECT, default
 // grapefruit-500208). Legacy (req, res) signature — this runtime ignores
-// returned Response objects.
+// returned Response objects and streams via res.write().
 
 const MODEL = "gemini-3.1-pro-preview";
 const PROJECT = process.env.GOOGLE_CLOUD_PROJECT || "grapefruit-500208";
 const BASE = `https://aiplatform.googleapis.com/v1/projects/${PROJECT}/locations/global/publishers/google/models/${MODEL}:generateContent`;
 
-// Grounded generation can take a while; stay under the 60s function cap.
-const GROUNDED_TIMEOUT_MS = 40_000;
-const PLAIN_TIMEOUT_MS = 20_000;
+const GROUNDED_TIMEOUT_MS = 58_000;
+const PLAIN_FALLBACK_TIMEOUT_MS = 45_000;
 
 interface Body {
   symbol?: string;
@@ -22,70 +22,93 @@ interface Body {
   context?: string;
 }
 
-interface ReqLike {
-  method?: string;
-  body?: unknown;
-}
-
+interface ReqLike { method?: string; body?: unknown; }
 interface ResLike {
-  status(code: number): ResLike;
-  json(payload: unknown): void;
+  writeHead(code: number, headers: Record<string, string>): void;
+  write(chunk: string): void;
+  end(): void;
 }
-
-async function postJsonTimeout(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<any> {
-  const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-  try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: ctrl.signal,
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`Gemini Agent Platform ${res.status}: ${text.slice(0, 300)}`);
-    }
-    return await res.json();
-  } finally {
-    clearTimeout(timer);
-  }
-}
+interface Progress { written: number; }
 
 function generationPayload(prompt: string, grounded: boolean) {
   const base = {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: prompt }],
-      },
-    ],
-    // Note: reasoning tokens count against this budget on 3.x models.
-    generationConfig: {
-      maxOutputTokens: 3072,
-      temperature: 0.3,
-    },
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: { maxOutputTokens: 3072, temperature: 0.3 },
   };
   if (grounded) {
-    // Agent Platform accepts google_search; the googleSearchRetrieval variant
-    // is rejected for this model ("please use google_search field instead").
+    // Agent Platform accepts google_search; googleSearchRetrieval is rejected
+    // for this model ("please use google_search field instead").
     return { ...base, tools: [{ google_search: {} }] };
   }
   return base;
 }
 
-async function askGemini(key: string, prompt: string, grounded: boolean, timeoutMs: number) {
-  const data = await postJsonTimeout(
-    BASE,
-    { "x-goog-api-key": key },
-    generationPayload(prompt, grounded),
-    timeoutMs,
-  );
-  const text = (data?.candidates?.[0]?.content?.parts ?? [])
-    .map((p: any) => p.text ?? "")
-    .join("")
-    .trim();
-  return { content: text, model: MODEL };
+// Streams the SSE generateContent response, forwarding only NEW text as
+// NDJSON deltas and tracking how much has been written so far.
+async function streamGemini(
+  key: string,
+  prompt: string,
+  grounded: boolean,
+  res: ResLike,
+  timeoutMs: number,
+  progress: Progress,
+): Promise<void> {
+  const url = BASE.replace(":generateContent", ":streamGenerateContent") + "?alt=sse";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  let upstream: Response;
+  try {
+    upstream = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify(generationPayload(prompt, grounded)),
+      signal: ctrl.signal,
+    });
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
+  try {
+    if (!upstream.ok || !upstream.body) {
+      const text = await upstream.text().catch(() => "");
+      throw new Error(`Gemini Agent Platform ${upstream.status}: ${text.slice(0, 300)}`);
+    }
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = "";
+    let cumulative = "";
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop() ?? "";
+      for (const line of lines) {
+        const t = line.trim();
+        if (!t.startsWith("data:")) continue;
+        const payload = t.slice(5).trim();
+        if (!payload || payload === "[DONE]") continue;
+        let chunk: any;
+        try { chunk = JSON.parse(payload); } catch { continue; }
+        const text = (chunk?.candidates?.[0]?.content?.parts ?? [])
+          .map((p: any) => p.text ?? "")
+          .join("");
+        if (text.length > cumulative.length) {
+          const delta = text.slice(cumulative.length);
+          cumulative = text;
+          progress.written = cumulative.length;
+          res.write(JSON.stringify({ d: delta }) + "\n");
+        }
+      }
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error(`generation exceeded ${Math.round(timeoutMs / 1000)}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function buildPrompt(input: Body): string {
@@ -130,38 +153,51 @@ function buildPrompt(input: Body): string {
 
 export default async function handler(req: ReqLike, res: ResLike) {
   if (req.method !== "POST") {
-    return res.status(405).json({ error: "method not allowed" });
+    res.writeHead(405, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "method not allowed" }));
   }
   let body: Body = {};
   try {
     body = (req.body ?? {}) as Body;
   } catch {
-    return res.status(400).json({ error: "invalid json body" });
+    res.writeHead(400, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "invalid json body" }));
   }
   if (!body.symbol) {
-    return res.status(400).json({ error: "symbol is required" });
+    res.writeHead(400, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "symbol is required" }));
   }
 
   const key = process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) {
-    return res.status(501).json({ error: "GOOGLE_GEMINI_API_KEY not configured in Vercel env" });
+    res.writeHead(501, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "GOOGLE_GEMINI_API_KEY not configured in Vercel env" }));
   }
 
+  res.writeHead(200, { "Content-Type": "application/x-ndjson" });
+  const prompt = buildPrompt(body);
+  const progress: Progress = { written: 0 };
+  const failMsg = (err: unknown) =>
+    `upstream failed: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}`;
+
   try {
-    // Grounded first; fall back to plain generation so the profile always
-    // comes back even if search grounding misbehaves.
-    let result;
-    try {
-      result = await askGemini(key, buildPrompt(body), true, GROUNDED_TIMEOUT_MS);
-    } catch {
-      result = await askGemini(key, buildPrompt(body), false, PLAIN_TIMEOUT_MS);
-    }
-    if (!result.content) {
-      return res.status(502).json({ error: "model returned an empty answer" });
-    }
-    return res.status(200).json(result);
+    await streamGemini(key, prompt, true, res, GROUNDED_TIMEOUT_MS, progress);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return res.status(502).json({ error: `upstream failed: ${msg.slice(0, 300)}` });
+    // If partial text already reached the client, don't duplicate it with a
+    // retry; just note the interruption.
+    if (progress.written > 0) {
+      res.write(JSON.stringify({ error: `stream interrupted: ${failMsg(err)}` }) + "\n");
+    } else {
+      try {
+        await streamGemini(key, prompt, false, res, PLAIN_FALLBACK_TIMEOUT_MS, progress);
+      } catch (err2) {
+        res.write(JSON.stringify({ error: failMsg(err2) }) + "\n");
+      }
+    }
   }
+
+  if (progress.written === 0) {
+    res.write(JSON.stringify({ error: "model returned an empty answer" }) + "\n");
+  }
+  res.end();
 }
