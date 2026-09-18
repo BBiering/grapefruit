@@ -1,8 +1,9 @@
 // Vercel serverless function: per-company research profile from Gemini.
 // POST { symbol, name, exchange, sector, context } -> { content, model }.
-// Uses the "🗞 News" button on a company card. Web grounding where available,
-// plain-completion fallback otherwise. Key: GOOGLE_GEMINI_API_KEY or
-// GOOGLE_API_KEY (Vercel env).
+// Uses the "🗞 News" button on a company card; grounded with Google search.
+// Uses the legacy (req, res) signature — the (req) => Response style is
+// ignored by this runtime (returns get dropped, request hangs until timeout).
+// Key: GOOGLE_GEMINI_API_KEY or GOOGLE_API_KEY (Vercel env).
 
 const MODEL = "gemini-3.1-pro-preview";
 
@@ -14,9 +15,22 @@ interface Body {
   context?: string;
 }
 
-async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
+interface ReqLike {
+  method?: string;
+  body?: unknown;
+}
+
+interface ResLike {
+  status(code: number): ResLike;
+  json(payload: unknown): void;
+}
+
+// Grounded generation can take a while; stay under the 60s function cap.
+const UPSTREAM_TIMEOUT_MS = 52_000;
+
+async function postJsonTimeout(url: string, headers: Record<string, string>, body: unknown, timeoutMs: number): Promise<any> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45_000); // grounded generation can take a while
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -26,7 +40,7 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
     });
     if (!res.ok) {
       const text = await res.text().catch(() => "");
-      throw new Error(`${res.status}: ${text.slice(0, 300)}`);
+      throw new Error(`Gemini API ${res.status}: ${text.slice(0, 300)}`);
     }
     return await res.json();
   } finally {
@@ -34,9 +48,12 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   }
 }
 
-async function askGemini(key: string, prompt: string) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
-  const payload = {
+async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
+  return postJsonTimeout(url, headers, body, UPSTREAM_TIMEOUT_MS);
+}
+
+function generationPayload(prompt: string, seed: number, grounded: boolean) {
+  const base = {
     contents: [
       {
         role: "user",
@@ -44,12 +61,33 @@ async function askGemini(key: string, prompt: string) {
       },
     ],
     generationConfig: {
-      maxOutputTokens: 4096,
+      seed,
+      maxOutputTokens: 3072,
       temperature: 0.3,
     },
-    tools: [{ google_search: {} }],
   };
-  const data = await postJson(url, {}, payload);
+  if (grounded) {
+    // google_search:{} is rejected by some 3.x preview models (400 "The string
+    // did not match the expected pattern"); the retrieval form is accepted.
+    return {
+      ...base,
+      tools: [
+        {
+          google_search_retrieval: {
+            dynamic_retrieval_config: { mode: "MODE_DYNAMIC", dynamic_threshold: 0.3 },
+          },
+        },
+      ],
+    };
+  }
+  return base;
+}
+
+async function askGemini(key: string, prompt: string, grounded: boolean, timeoutMs: number) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
+  const data = await postJsonTimeout(
+    url, {}, generationPayload(prompt, Date.now() % 1_000_000, grounded), timeoutMs,
+  );
   const text = (data?.candidates?.[0]?.content?.parts ?? [])
     .map((p: any) => p.text ?? "")
     .join("")
@@ -97,42 +135,40 @@ function buildPrompt(input: Body): string {
   ].join("\n");
 }
 
-export default async function handler(req: Request) {
+export default async function handler(req: ReqLike, res: ResLike) {
   if (req.method !== "POST") {
-    return new Response(JSON.stringify({ error: "method not allowed" }), { status: 405 });
+    return res.status(405).json({ error: "method not allowed" });
   }
   let body: Body = {};
   try {
-    body = (await req.json()) as Body;
+    body = (req.body ?? {}) as Body;
   } catch {
-    return new Response(JSON.stringify({ error: "invalid json body" }), { status: 400 });
+    return res.status(400).json({ error: "invalid json body" });
   }
   if (!body.symbol) {
-    return new Response(JSON.stringify({ error: "symbol is required" }), { status: 400 });
+    return res.status(400).json({ error: "symbol is required" });
   }
 
   const key = process.env.GOOGLE_GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!key) {
-    return new Response(
-      JSON.stringify({ error: "GOOGLE_GEMINI_API_KEY not configured in Vercel env" }),
-      { status: 501 },
-    );
+    return res.status(501).json({ error: "GOOGLE_GEMINI_API_KEY not configured in Vercel env" });
   }
 
-  const prompt = buildPrompt(body);
   try {
-    const result = await askGemini(key, prompt);
-    if (!result.content) {
-      return new Response(JSON.stringify({ error: "model returned an empty answer" }), { status: 502 });
+    // Grounded first; if grounding is unsupported for this model/key, fall
+    // back to plain generation so the profile always comes back.
+    let result;
+    try {
+      result = await askGemini(key, buildPrompt(body), true, 38_000);
+    } catch {
+      result = await askGemini(key, buildPrompt(body), false, 20_000);
     }
-    return new Response(JSON.stringify(result), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
+    if (!result.content) {
+      return res.status(502).json({ error: "model returned an empty answer" });
+    }
+    return res.status(200).json(result);
   } catch (err) {
-    return new Response(
-      JSON.stringify({ error: `upstream failed: ${err instanceof Error ? err.message.slice(0, 300) : String(err)}` }),
-      { status: 502 },
-    );
+    const msg = err instanceof Error ? err.message : String(err);
+    return res.status(502).json({ error: `upstream failed: ${msg.slice(0, 300)}` });
   }
 }

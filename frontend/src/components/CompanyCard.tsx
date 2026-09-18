@@ -76,7 +76,13 @@ export function CompanyCard({ company }: Props) {
           ].join("\n"),
         }),
       });
-      const data = (await res.json()) as { content?: string; error?: string };
+      const raw = await res.text();
+      let data: { content?: string; error?: string } = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw new Error(raw.trim().slice(0, 300) || `HTTP ${res.status}`);
+      }
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setNews({ status: "done", content: data.content || "" });
     } catch (err) {
