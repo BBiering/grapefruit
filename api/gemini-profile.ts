@@ -33,7 +33,13 @@ interface Progress { written: number; }
 function generationPayload(prompt: string, grounded: boolean) {
   const base = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { maxOutputTokens: 3072, temperature: 0.3 },
+    // Trimmed generation: capped output + modest thinking budget keep the whole
+    // grounded run under the 60s function limit (TTFT is ~20s regardless).
+    generationConfig: {
+      maxOutputTokens: 2048,
+      temperature: 0.3,
+      thinkingConfig: { thinkingBudget: 256 },
+    },
   };
   if (grounded) {
     // Agent Platform accepts google_search; googleSearchRetrieval is rejected
@@ -43,8 +49,9 @@ function generationPayload(prompt: string, grounded: boolean) {
   return base;
 }
 
-// Streams the SSE generateContent response, forwarding only NEW text as
-// NDJSON deltas and tracking how much has been written so far.
+// Streams the SSE generateContent response and forwards every new text chunk
+// as a NDJSON delta. Note: on this surface the SSE parts carry INCREMENTAL
+// text (deltas), not the full accumulated answer.
 async function streamGemini(
   key: string,
   prompt: string,
@@ -76,7 +83,6 @@ async function streamGemini(
     const reader = upstream.body.getReader();
     const decoder = new TextDecoder();
     let buf = "";
-    let cumulative = "";
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -93,11 +99,9 @@ async function streamGemini(
         const text = (chunk?.candidates?.[0]?.content?.parts ?? [])
           .map((p: any) => p.text ?? "")
           .join("");
-        if (text.length > cumulative.length) {
-          const delta = text.slice(cumulative.length);
-          cumulative = text;
-          progress.written = cumulative.length;
-          res.write(JSON.stringify({ d: delta }) + "\n");
+        if (text) {
+          progress.written += text.length;
+          res.write(JSON.stringify({ d: text }) + "\n");
         }
       }
     }
