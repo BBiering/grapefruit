@@ -1,0 +1,18 @@
+# Upload only what Vercel needs (CLI ignores gitignore; keep the deploy small).
+.git
+.vercel
+.venv
+venv
+node_modules
+**/node_modules
+frontend/dist
+data
+.pytest_cache
+__pycache__
+*.pyc
+.DS_Store
+backend
+supabase
+infra
+cloud
+.github
