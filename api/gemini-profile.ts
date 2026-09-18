@@ -34,11 +34,13 @@ function generationPayload(prompt: string, grounded: boolean) {
   const base = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     // Trimmed generation: capped output + modest thinking budget keep the whole
-    // grounded run under the 60s function limit (TTFT is ~20s regardless).
+    // grounded run under the 60s function limit (measured: a complete ~4.5k-char
+    // profile ends with STOP in ~21-23s). 2048 was too tight and truncated long
+    // profiles mid-section.
     generationConfig: {
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096,
       temperature: 0.3,
-      thinkingConfig: { thinkingBudget: 256 },
+      thinkingConfig: { thinkingBudget: 128 },
     },
   };
   if (grounded) {
