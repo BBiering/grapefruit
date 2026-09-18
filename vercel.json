@@ -4,6 +4,9 @@
   "outputDirectory": "frontend/dist",
   "installCommand": "true",
   "framework": null,
+  "functions": {
+    "api/gemini-profile.ts": { "maxDuration": 60 }
+  },
   "rewrites": [
     { "source": "/app", "destination": "/app/index.html" },
     { "source": "/app/(.*)", "destination": "/app/index.html" }

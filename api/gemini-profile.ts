@@ -16,7 +16,7 @@ interface Body {
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown): Promise<any> {
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 90_000);
+  const timer = setTimeout(() => ctrl.abort(), 45_000); // grounded generation can take a while
   try {
     const res = await fetch(url, {
       method: "POST",
@@ -34,9 +34,9 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
   }
 }
 
-async function askGemini(key: string, prompt: string, withSearch: boolean) {
+async function askGemini(key: string, prompt: string) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${key}`;
-  const base = {
+  const payload = {
     contents: [
       {
         role: "user",
@@ -47,14 +47,14 @@ async function askGemini(key: string, prompt: string, withSearch: boolean) {
       maxOutputTokens: 4096,
       temperature: 0.3,
     },
+    tools: [{ google_search: {} }],
   };
-  const payload = withSearch ? { ...base, tools: [{ google_search: {} }] } : base;
   const data = await postJson(url, {}, payload);
   const text = (data?.candidates?.[0]?.content?.parts ?? [])
     .map((p: any) => p.text ?? "")
     .join("")
     .trim();
-  return { content: text, model: MODEL, used_search: withSearch };
+  return { content: text, model: MODEL };
 }
 
 function buildPrompt(input: Body): string {
@@ -121,12 +121,7 @@ export default async function handler(req: Request) {
 
   const prompt = buildPrompt(body);
   try {
-    let result;
-    try {
-      result = await askGemini(key, prompt, true);
-    } catch {
-      result = await askGemini(key, prompt, false);
-    }
+    const result = await askGemini(key, prompt);
     if (!result.content) {
       return new Response(JSON.stringify({ error: "model returned an empty answer" }), { status: 502 });
     }

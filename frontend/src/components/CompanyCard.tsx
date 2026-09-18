@@ -55,10 +55,13 @@ export function CompanyCard({ company }: Props) {
 
   async function askNews() {
     setNews({ status: "loading" });
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 70_000);
     try {
       const res = await fetch("/api/gemini-profile", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: ctrl.signal,
         body: JSON.stringify({
           symbol: company.symbol,
           name: company.name,
@@ -79,8 +82,15 @@ export function CompanyCard({ company }: Props) {
     } catch (err) {
       setNews({
         status: "error",
-        error: err instanceof Error ? err.message : "Request failed",
+        error:
+          err instanceof DOMException && err.name === "AbortError"
+            ? "The request timed out after 70s. The model may be slow; try again."
+            : err instanceof Error
+              ? err.message
+              : "Request failed",
       });
+    } finally {
+      clearTimeout(timer);
     }
   }
 
