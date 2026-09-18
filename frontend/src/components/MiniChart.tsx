@@ -174,7 +174,9 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
                 const x = rect.left + cx;
                 const y = rect.top + cy;
                 const flipX = x < 350; // popover (~340px) would leave the left edge
-                const flipY = y < 180; // popover (up to ~55vh) would leave the top edge
+                // In the top band (sticky header ≈72px + tallest popover) show
+                // the window BELOW the dot so it is never cut off by the header.
+                const flipY = y < 330;
                 setHover({ event: p.event, left: x, top: y, flipX, flipY });
               }}
               onMouseLeave={scheduleClose}
@@ -227,6 +229,11 @@ export function MiniChart({ symbol, events }: MiniChartProps) {
               transform: hover.flipX
                 ? (hover.flipY ? "none" : "translateY(-100%)")
                 : (hover.flipY ? "translateX(-100%)" : "translate(-100%, -100%)"),
+              // Cap height to the space available on the chosen side so the
+              // window never overflows the viewport top or bottom.
+              maxHeight: hover.flipY
+                ? `calc(100vh - ${hover.top + 34}px)`
+                : `${hover.top - 14}px`,
               zIndex: 9999,
             }}
             onMouseEnter={cancelClose}
