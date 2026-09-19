@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../supabase";
 import type { CompanyCard, PastCatalyst, PredictedCatalyst, PredictionPerformance, ChartEvent } from "../types";
+import { pickNextEvent, windowEndDate } from "../utils";
 
 // Must match eodhd_client.EXCHANGES in the backend.
 const ACTIVE_EXCHANGES = ["US", "ST", "LSE", "PA", "SW", "CO", "XETRA"];
@@ -167,6 +168,20 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
     predictedBySymbol.set(f.symbol, events);
   }
 
+  // 5b. Cached AI news sentiment (for the 🗞 dot; rest of the content is
+  // fetched on click).
+  const { data: newsData } = await supabase
+    .from("company_news")
+    .select("symbol, sentiment, red_flags")
+    .in("symbol", symbols.slice(0, 5000));
+  const newsBySymbol = new Map<string, { sentiment: string | null; flags: string[] }>();
+  for (const n of newsData || []) {
+    newsBySymbol.set(n.symbol, {
+      sentiment: n.sentiment as string | null,
+      flags: (n.red_flags || "").split("|").map((s: string) => s.trim()).filter(Boolean),
+    });
+  }
+
   // 6. Build CompanyCard[]
   const companies: CompanyCard[] = [];
 
@@ -181,6 +196,14 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
     const predicted_catalysts = dedupePredicted(rawPredicted);
     const predicted_catalyst =
       [...predicted_catalysts].sort((a, b) => eventScore(b) - eventScore(a))[0] ?? null;
+
+    // Ranking key: the next predicted catalyst, quarters/halves at their end
+    // date. Unknown -> Infinity (sorts last).
+    const pick = pickNextEvent(predicted_catalysts);
+    const next_catalyst_ts = pick
+      ? windowEndDate(pick.date?.trim() ? pick.date : (pick.event_name || pick.summary))
+      : Infinity;
+    const cached = newsBySymbol.get(asset.symbol);
 
     const past_catalyst: PastCatalyst | null = step ? {
       start_date: step.start_ts,
@@ -238,6 +261,9 @@ async function fetchCompanies(): Promise<CompanyCard[]> {
       predicted_catalyst,
       predicted_catalysts,
       chart_events,
+      next_catalyst_ts,
+      news_sentiment: (cached?.sentiment as "positive" | "negative" | "neutral" | null | undefined),
+      news_flags: cached?.flags ?? null,
     });
   }
 

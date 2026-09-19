@@ -37,13 +37,10 @@ export function Dashboard() {
     if (sortBy === "past") {
       copy.sort((a, b) => (b.past_catalyst?.multiplier ?? 0) - (a.past_catalyst?.multiplier ?? 0));
     } else {
-      // Predicted-first sort: biggest expected impact first; companies with
-      // no predicted catalyst sink to the bottom.
-      copy.sort((a, b) => {
-        const ia = a.predicted_catalyst?.impact_pct ?? -Infinity;
-        const ib = b.predicted_catalyst?.impact_pct ?? -Infinity;
-        return ib - ia;
-      });
+      // Proximity-to-catalyst sort: earliest next binary event first.
+      // Quarters/halves count at their END date (Q4 2027 -> 31 Dec 2027);
+      // companies without a knowable window sink to the bottom.
+      copy.sort((a, b) => ((a.next_catalyst_ts ?? Infinity) - (b.next_catalyst_ts ?? Infinity)));
     }
     return copy;
   }, [companies, sortBy]);

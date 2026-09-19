@@ -69,6 +69,14 @@ export interface CompanyCard {
 
   // Dots rendered on the price chart, hover shows a floating window
   chart_events: ChartEvent[];
+
+  // Epoch ms of the next predicted catalyst (quarter/half taken at their END
+  // date, e.g. Q4 2027 -> 31 Dec 2027); Infinity when none is knowable.
+  next_catalyst_ts: number;
+
+  // Cached AI profile sentiment (from company_news), for the News button dot.
+  news_sentiment?: "positive" | "negative" | "neutral" | null;
+  news_flags?: string[] | null;
 }
 
 export interface ModelNews {

@@ -13,38 +13,54 @@ interface Props {
   company: CompanyCardType;
 }
 
+type Sentiment = "positive" | "negative" | "neutral";
+
 type NewsState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "streaming"; text: string }
+  | { status: "streaming"; text: string; sentiment?: Sentiment; flags?: string[] }
   | { status: "error"; error: string }
-  | { status: "done"; content: string; model?: string };
+  | { status: "done"; content: string; model?: string; sentiment?: Sentiment; flags?: string[] };
 
-// Minimal markdown-ish rendering for the Gemini profile: numbered/## lines
-// become section headings, bullets stay bullets, everything else is prose.
-function formattedSections(text: string) {
+// Markdown-ish rendering for the Gemini profile: numbered/## lines become
+// headings, bullets stay bullets, **bold** segments become <strong>, and a
+// short leading "Title:" inside a bullet is bolded when the model didn't.
+function renderInline(text: string, key: number) {
+  return text.split(/(\*\*[^*]+\*\*)/g).map((part, j) =>
+    /^\*\*/.test(part)
+      ? <strong key={`${key}-${j}`}>{part.replace(/\*\*/g, "")}</strong>
+      : <span key={`${key}-${j}`}>{part}</span>,
+  );
+}
+
+function formattedSections(text: string, lastClose?: number) {
   return text.split("\n").map((raw, i) => {
     const t = raw.trim();
     if (!t) return null;
     if (/^\d+\./.test(t) || /^#{1,3}\s/.test(t)) {
-      return (
-        <h5 className="pf-h" key={i}>
-          {t.replace(/^#+\s*/, "").replace(/\*\*/g, "")}
-        </h5>
-      );
+      let heading = t.replace(/^#+\s*/, "");
+      // Always surface the current price in section 5's title.
+      if (/^5\./.test(t) && lastClose != null && !/current price/i.test(heading)) {
+        heading += ` — Current price: $${lastClose.toFixed(2)}`;
+      }
+      return <h5 className="pf-h" key={i}>{renderInline(heading, i)}</h5>;
     }
     if (/^[-•·*]\s/.test(t)) {
-      return (
-        <div className="pf-li" key={i}>
-          {t.replace(/^[-•·*]\s*/, "• ").replace(/\*\*/g, "")}
-        </div>
-      );
+      const body = t.replace(/^[-•·*]\s*/, "");
+      if (!/\*\*/.test(body)) {
+        const ci = body.indexOf(":");
+        if (ci > 0 && ci < 80) {
+          return (
+            <div className="pf-li" key={i}>
+              <strong>{body.slice(0, ci + 1)}</strong>
+              {body.slice(ci + 1)}
+            </div>
+          );
+        }
+      }
+      return <div className="pf-li" key={i}>{renderInline(body, i)}</div>;
     }
-    return (
-      <p className="pf-p" key={i}>
-        {t.replace(/\*\*/g, "")}
-      </p>
-    );
+    return <p className="pf-p" key={i}>{renderInline(t, i)}</p>;
   });
 }
 
@@ -91,6 +107,8 @@ export function CompanyCard({ company }: Props) {
       let buf = "";
       let text = "";
       let error = "";
+      let sentiment: Sentiment | undefined;
+      let flags: string[] | undefined;
       setNews({ status: "streaming", text: "" });
       for (;;) {
         const { done, value } = await reader.read();
@@ -100,18 +118,23 @@ export function CompanyCard({ company }: Props) {
         buf = lines.pop() ?? "";
         for (const line of lines) {
           if (!line.trim()) continue;
-          let row: { d?: string; error?: string };
+          let row: { d?: string; error?: string; s?: Sentiment; flags?: string[] };
           try { row = JSON.parse(line); } catch { continue; }
           if (row.d) {
             text += row.d;
-            setNews({ status: "streaming", text });
+            setNews({ status: "streaming", text, sentiment, flags });
+          }
+          if (row.s) {
+            sentiment = row.s;
+            flags = row.flags;
+            setNews({ status: "streaming", text, sentiment, flags });
           }
           if (row.error) error = row.error;
         }
       }
       if (error) throw new Error(error);
       if (!text.trim()) throw new Error("model returned an empty answer");
-      setNews({ status: "done", content: text });
+      setNews({ status: "done", content: text, sentiment, flags });
     } catch (err) {
       setNews((prev) => {
         // Keep whatever streamed in if we were interrupted mid-profile.
@@ -176,8 +199,18 @@ export function CompanyCard({ company }: Props) {
           )}
 
           <button className="news-btn" onClick={askNews} disabled={news.status === "loading" || news.status === "streaming"}>
+            {(news.status === "done" || news.status === "streaming" ? news.sentiment : company.news_sentiment) && (
+              <span className={`news-dot ${(news.status === "done" || news.status === "streaming" ? news.sentiment : company.news_sentiment) === "positive" ? "pos" : "neg"}`} />
+            )}
             🗞️ News
           </button>
+          {((news.status === "done" || news.status === "streaming") && news.flags?.length ? news.flags : company.news_flags ?? []).length > 0 && (
+            <div className="news-flags">
+              {(((news.status === "done" || news.status === "streaming") && news.flags?.length ? news.flags : company.news_flags ?? [])).map((f) => (
+                <span className="flag-chip" key={f}>{f}</span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -195,12 +228,12 @@ export function CompanyCard({ company }: Props) {
                 {news.status === "loading" && <div className="muted">Gemini is researching {company.name}…</div>}
                 {news.status === "streaming" && (
                   <>
-                    {formattedSections(news.text)}
+                    {formattedSections(news.text, company.last_close)}
                     <div className="muted pf-stream">generating…</div>
                   </>
                 )}
                 {news.status === "error" && <div className="ai-error">{news.error}</div>}
-                {news.status === "done" && news.content && formattedSections(news.content)}
+                {news.status === "done" && news.content && formattedSections(news.content, company.last_close)}
               </div>
             </div>
           </div>,

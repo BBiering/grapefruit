@@ -77,6 +77,21 @@ const _QIDX: Record<string, number> = {
 
 const _year4 = (y: string): string => (y.length === 4 ? y : `${2000 + +y}`);
 
+// Last calendar date of a catalyst window: "Q4 2027" -> 31 Dec 2027,
+// "H2 2027" -> 31 Dec 2027, ISO date -> itself. Unknown -> Infinity so it
+// sorts after everything else.
+export function windowEndDate(value: string | null | undefined): number {
+  if (!value) return Infinity;
+  const p = parseWindow(value);
+  if (!p) return Infinity;
+  if (p.iso) return Date.parse(p.iso + "T00:00:00Z");
+  const m = p.label.match(/^(Q[1-4]|H[12])\s+(\d{4})$/);
+  if (!m) return Infinity;
+  const year = +m[2];
+  if (m[1].startsWith("Q")) return Date.UTC(year, +m[1][1] * 3, 1) - 1; // Q4 -> 01 Jan y+1 - 1ms
+  return Date.UTC(year, +m[1][1] * 6, 1) - 1; // H2 -> 01 Jan y+1 - 1ms; H1 -> 01 Jul - 1ms
+}
+
 export function parseWindow(v: string | null | undefined): { label: string; iso: string | null } | null {
   if (!v || !v.trim()) return null;
   const s = v.trim();
