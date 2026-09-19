@@ -498,6 +498,7 @@ _WINDOW_MONTH = re.compile(
 )
 _WINDOW_QUARTER = re.compile(r"(?i)\bq([1-4])\s*['’]?\s*(\d{2}|\d{4})\b")
 _WINDOW_HALF = re.compile(r"(?i)\bh([12])\s*['’]?\s*(\d{2}|\d{4})\b")
+_WINDOW_HALF_TEXT = re.compile(r"(?i)\b(?:first|1st|second|2nd)\s+half\s+of\s+(\d{4})\b")
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
@@ -532,6 +533,18 @@ def extract_window_from_text(text: str | None, today: date | None = None) -> str
         y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
         if 1 <= mo <= 12 and 1 <= d <= 31:
             return f"{y:04d}-{mo:02d}-{d:02d}"
+    # Explicit windows first: "...in Q4 2026" should beat a bare "June"
+    # mention elsewhere in the sentence.
+    m = _WINDOW_QUARTER.search(s)
+    if m:
+        return f"Q{m.group(1)} {_year4(m.group(2))}"
+    m = _WINDOW_HALF.search(s)
+    if m:
+        return f"H{m.group(1)} {_year4(m.group(2))}"
+    m = _WINDOW_HALF_TEXT.search(s)  # "second half of 2026"
+    if m:
+        second = m.group(0).lower().startswith(("second", "2nd"))
+        return f"H{2 if second else 1} {m.group(1)}"
     m = _WINDOW_MONTH.search(s)
     if m:
         mo = _MONTHS[m.group(2).lower()[:3]]
@@ -586,12 +599,15 @@ def replace_forward_catalysts(rows: list[dict]) -> int:
     if not detected_rows:
         return 0
 
-    # The scan prompt often leaves expected_window empty while the event name
-    # carries the date ("30 Sept 2026", "Q4 2026"...). Fill it at write time so
-    # the header horizon and chart placement always benefit.
+    # The scan often leaves expected_window empty while the event name or its
+    # strategic summary carries the window ("in Q4 2026", "planned for
+    # September 2026"...). Fill it at write time so the header horizon and
+    # chart placement always benefit.
     for row in detected_rows:
         if not (row.get("expected_window") or "").strip():
             parsed = extract_window_from_text(row.get("event_name") or "")
+            if not parsed:
+                parsed = extract_window_from_text(row.get("strategic_summary") or "")
             if parsed:
                 row["expected_window"] = parsed
 

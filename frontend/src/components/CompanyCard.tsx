@@ -160,7 +160,7 @@ export function CompanyCard({ company }: Props) {
                 <div className="ne-name">{next.event_name}</div>
               )}
               <div className="ne-horizon">
-                Time horizon: {timeHorizon(next.date?.trim() ? next.date : next.event_name)}
+                Time horizon: {timeHorizon(next.date?.trim() ? next.date : (next.event_name || next.summary))}
               </div>
             </div>
           ) : company.past_catalyst ? (
