@@ -6,6 +6,7 @@ DDL is idempotent in init_db(); no migration tooling.
 from __future__ import annotations
 
 import json
+import re
 import threading
 from contextlib import contextmanager
 from datetime import date, datetime, timezone
@@ -483,6 +484,95 @@ def _matches_existing(incoming: dict, existing: dict) -> bool:
     return _similarity(it, et) >= 0.55 or (same_type and _distinctive_shared(it, et))
 
 
+# ---------------------------------------------------------------------------
+# Free-text date extraction for catalyst windows ("30 Sept 2026", "Q4 2026",
+# "H1 2027", "September 2026") -> canonical "YYYY-MM-DD" / "Qx YYYY" / "Hx YYYY".
+# ---------------------------------------------------------------------------
+_MONTH_NAMES = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sept(?:ember)?|sep|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
+_WINDOW_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+_WINDOW_MONTH = re.compile(
+    r"(?i)\b(?:(\d{1,2})(?:st|nd|rd|th)?[\s,.]*)?(" + _MONTH_NAMES + r")(?:[\s,.]*(\d{4}))?(?!-?\d)\b"
+)
+_WINDOW_QUARTER = re.compile(r"(?i)\bq([1-4])\s*['’]?\s*(\d{2}|\d{4})\b")
+_WINDOW_HALF = re.compile(r"(?i)\bh([12])\s*['’]?\s*(\d{2}|\d{4})\b")
+_MONTHS = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
+}
+
+# Major recurring congresses -> their usual month, so a bare "ESMO 2026"-style
+# name still yields an approximate quarter.
+_CONFERENCE_MONTHS = {
+    "esmo": 9, "easd": 9, "asbrm": 9, "asco": 6, "aacr": 4, "jpm": 1,
+}
+
+
+def _year4(y: str) -> str:
+    return y if len(y) == 4 else f"{2000 + int(y)}"
+
+
+def extract_window_from_text(text: str | None, today: date | None = None) -> str:
+    """Best-effort catalyst window from free text (event names). Returns a
+    canonical value the rest of the stack understands, or '' when absent.
+
+    Handles: ISO dates, "30 Sept 2026" / "September 2026", month without a
+    year ("September data cut" -> nearest occurrence in the scan window),
+    "Q4 2026"/"H1 2027" (also 2-digit years), and conference-year names
+    ("ESMO 2026" -> its usual quarter).
+    """
+    if not text:
+        return ""
+    today = today or date.today()
+    s = text.strip()
+    m = _WINDOW_ISO.search(s)
+    if m:
+        y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        if 1 <= mo <= 12 and 1 <= d <= 31:
+            return f"{y:04d}-{mo:02d}-{d:02d}"
+    m = _WINDOW_MONTH.search(s)
+    if m:
+        mo = _MONTHS[m.group(2).lower()[:3]]
+        day = int(m.group(1)) if m.group(1) else None
+        yy = m.group(3)
+        if not yy:
+            # Month without a year: this month if we're in it, else the
+            # nearest month-start at/after today.
+            for y in (today.year, today.year + 1):
+                if day:
+                    try:
+                        cand = date(y, mo, day)
+                    except ValueError:
+                        continue
+                    if today <= cand:
+                        return cand.isoformat()
+                else:
+                    if mo == today.month and y == today.year:
+                        return f"Q{(mo - 1) // 3 + 1} {y}"
+                    if today < date(y, mo, 1):
+                        return f"Q{(mo - 1) // 3 + 1} {y}"
+            return ""
+        if day and 1 <= day <= 31:
+            return f"{int(_year4(yy)):04d}-{mo:02d}-{day:02d}"
+        return f"Q{(mo - 1) // 3 + 1} {_year4(yy)}"
+    m = _WINDOW_QUARTER.search(s)
+    if m:
+        return f"Q{m.group(1)} {_year4(m.group(2))}"
+    m = _WINDOW_HALF.search(s)
+    if m:
+        return f"H{m.group(1)} {_year4(m.group(2))}"
+    # Conference-year name ("ESMO 2026", "ERS Congress 2026"...) -> usual quarter.
+    low = s.lower()
+    for conf, mo in _CONFERENCE_MONTHS.items():
+        if conf in low:
+            ym = re.search(r"\b(20\d{2})\b", s)
+            if ym:
+                return f"Q{(mo - 1) // 3 + 1} {ym.group(1)}"
+    return ""
+
+
 def replace_forward_catalysts(rows: list[dict]) -> int:
     """Upsert detected predictions without deleting prior prediction history.
 
@@ -495,6 +585,15 @@ def replace_forward_catalysts(rows: list[dict]) -> int:
     detected_rows = [r for r in rows if r.get("detected")]
     if not detected_rows:
         return 0
+
+    # The scan prompt often leaves expected_window empty while the event name
+    # carries the date ("30 Sept 2026", "Q4 2026"...). Fill it at write time so
+    # the header horizon and chart placement always benefit.
+    for row in detected_rows:
+        if not (row.get("expected_window") or "").strip():
+            parsed = extract_window_from_text(row.get("event_name") or "")
+            if parsed:
+                row["expected_window"] = parsed
 
     symbols = [r["symbol"] for r in detected_rows]
     with _conn() as con:

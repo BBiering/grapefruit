@@ -58,8 +58,16 @@ export function exchangeToCountry(exchange: string | null | undefined): string |
 // undated event whose name embeds one (e.g. "H1 2026 Financial Results")
 // still gets a proper date instead of "Date unknown".
 const _ISO_RE = /(\d{4})-(\d{2})-(\d{2})/;
-const _Q_RE = /\bQ\s*([1-4])['’]?\s*(\d{4})\b/i;
-const _H_RE = /\bH([12])\s*(\d{4})\b/i;
+const _Q_RE = /\bQ\s*([1-4])['’]?\s*(\d{2}|\d{4})\b/i;
+const _H_RE = /\bH([12])\s*['’]?\s*(\d{2}|\d{4})\b/i;
+const _MONTH_RE =
+  /(?:(\d{1,2})(?:st|nd|rd|th)?[\s,.]*)?(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sept(?:ember)?|sep|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)(?:[\s,.]*(\d{4}))?(?!-?\d)\b/i;
+const _MONTH_IDX: Record<string, number> = {
+  jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6,
+  jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
+};
+
+const _year4 = (y: string): string => (y.length === 4 ? y : `${2000 + +y}`);
 
 export function parseWindow(v: string | null | undefined): { label: string; iso: string | null } | null {
   if (!v || !v.trim()) return null;
@@ -74,10 +82,40 @@ export function parseWindow(v: string | null | undefined): { label: string; iso:
       };
     }
   }
+  m = s.match(_MONTH_RE); // "30 Sept 2026" (day), "Sep 2026", "September data cut" (no year)
+  if (m) {
+    const mo = _MONTH_IDX[m[2].toLowerCase().slice(0, 3)];
+    const day = m[1] && +m[1] >= 1 && +m[1] <= 31 ? +m[1] : null;
+    const isoLabel = (dt: Date) => ({
+      label: dt.toLocaleDateString("en-GB", { year: "numeric", month: "short", day: "numeric" }),
+      iso: dt.toISOString().slice(0, 10),
+    });
+    const quarter = (q: number, y: string) => ({ label: `Q${q} ${y}`, iso: null });
+    if (m[3]) {
+      if (day) {
+        const dt = new Date(Date.UTC(+_year4(m[3]), mo - 1, day));
+        if (!Number.isNaN(dt.getTime())) return isoLabel(dt);
+      }
+      return quarter(Math.floor((mo - 1) / 3) + 1, _year4(m[3]));
+    }
+    // Month without a year: nearest occurrence at/after today.
+    const now = new Date();
+    for (const y of [now.getFullYear(), now.getFullYear() + 1]) {
+      if (day) {
+        const dt = new Date(Date.UTC(y, mo - 1, day));
+        if (dt.getTime() >= now.getTime()) return isoLabel(dt);
+      } else if (mo === now.getMonth() + 1 && y === now.getFullYear()) {
+        return quarter(Math.floor((mo - 1) / 3) + 1, String(y));
+      } else if (Date.UTC(y, mo - 1, 1) > now.getTime()) {
+        return quarter(Math.floor((mo - 1) / 3) + 1, String(y));
+      }
+    }
+    return null;
+  }
   m = s.match(_Q_RE);
-  if (m) return { label: `Q${m[1]} ${m[2]}`, iso: null };
+  if (m) return { label: `Q${m[1]} ${_year4(m[2])}`, iso: null };
   m = s.match(_H_RE);
-  if (m) return { label: `H${m[1]} ${m[2]}`, iso: null };
+  if (m) return { label: `H${m[1]} ${_year4(m[2])}`, iso: null };
   return null;
 }
 
