@@ -496,9 +496,17 @@ _WINDOW_ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _WINDOW_MONTH = re.compile(
     r"(?i)\b(?:(\d{1,2})(?:st|nd|rd|th)?[\s,.]*)?(" + _MONTH_NAMES + r")(?:[\s,.]*(\d{4}))?(?!-?\d)\b"
 )
-_WINDOW_QUARTER = re.compile(r"(?i)\bq([1-4])\s*['’]?\s*(\d{2}|\d{4})\b")
+_WINDOW_QUARTER = re.compile(r"(?i)\bq([1-4])\s*(?:of\s+)?['’]?\s*(\d{2}|\d{4})\b")
+_WINDOW_Q_WORD = re.compile(
+    r"(?i)\b(?:first|1st|second|2nd|third|3rd|fourth|4th)\s+quarter(?:\s+of)?\s+(\d{4})\b"
+)
+_WINDOW_Q_DIGIT = re.compile(r"(?i)\b([1-4])q['’]?(?:\s*of)?\s*(\d{2}|\d{4})\b")  # "4Q26"
+_WINDOW_LATE = re.compile(
+    r"(?i)\b(?:late|around|towards? (?:the )?end of|by (?:the )?end of|before (?:the )?end of|year-?end)\s+(?:of\s+)?(20\d{2})\b"
+)  # "late 2026", "year-end 2026" -> Q4
 _WINDOW_HALF = re.compile(r"(?i)\bh([12])\s*['’]?\s*(\d{2}|\d{4})\b")
 _WINDOW_HALF_TEXT = re.compile(r"(?i)\b(?:first|1st|second|2nd)\s+half\s+of\s+(\d{4})\b")
+_QUARTER_IDX = {"first": 1, "1st": 1, "second": 2, "2nd": 2, "third": 3, "3rd": 3, "fourth": 4, "4th": 4}
 _MONTHS = {
     "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
     "jul": 7, "aug": 8, "sep": 9, "sept": 9, "oct": 10, "nov": 11, "dec": 12,
@@ -538,6 +546,14 @@ def extract_window_from_text(text: str | None, today: date | None = None) -> str
     m = _WINDOW_QUARTER.search(s)
     if m:
         return f"Q{m.group(1)} {_year4(m.group(2))}"
+    m = _WINDOW_Q_WORD.search(s)  # "first quarter of 2027"
+    if m:
+        q0 = m.group(0).lower()
+        q = 1 if q0.startswith(("first", "1st")) else 2 if q0.startswith(("second", "2nd")) else 3 if q0.startswith(("third", "3rd")) else 4
+        return f"Q{q} {m.group(1)}"
+    m = _WINDOW_Q_DIGIT.search(s)  # "4Q26", "3Q 2026"
+    if m:
+        return f"Q{m.group(1)} {_year4(m.group(2))}"
     m = _WINDOW_HALF.search(s)
     if m:
         return f"H{m.group(1)} {_year4(m.group(2))}"
@@ -545,6 +561,9 @@ def extract_window_from_text(text: str | None, today: date | None = None) -> str
     if m:
         second = m.group(0).lower().startswith(("second", "2nd"))
         return f"H{2 if second else 1} {m.group(1)}"
+    m = _WINDOW_LATE.search(s)  # "late 2026", "year-end 2026" -> Q4
+    if m:
+        return f"Q4 {m.group(1)}"
     m = _WINDOW_MONTH.search(s)
     if m:
         mo = _MONTHS[m.group(2).lower()[:3]]

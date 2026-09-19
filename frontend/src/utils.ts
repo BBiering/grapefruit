@@ -67,6 +67,13 @@ const _MONTH_IDX: Record<string, number> = {
   jul: 7, aug: 8, sep: 9, sept: 9, oct: 10, nov: 11, dec: 12,
 };
 const _HALF_TEXT_RE = /\b(?:first|1st|second|2nd)\s+half\s+of\s+(\d{4})\b/i;
+const _Q_WORD_RE = /\b(?:first|1st|second|2nd|third|3rd|fourth|4th)\s+quarter(?:\s+of)?\s+(\d{4})\b/i;
+const _Q_DIGIT_RE = /\b([1-4])q['’]?(?:\s*of)?\s*(\d{2}|\d{4})\b/i; // "4Q26"
+const _LATE_RE =
+  /\b(?:late|around|towards? (?:the )?end of|by (?:the )?end of|before (?:the )?end of|year-?end)\s+(?:of\s+)?(20\d{2})\b/i;
+const _QIDX: Record<string, number> = {
+  first: 1, "1st": 1, second: 2, "2nd": 2, third: 3, "3rd": 3, fourth: 4, "4th": 4,
+};
 
 const _year4 = (y: string): string => (y.length === 4 ? y : `${2000 + +y}`);
 
@@ -86,10 +93,22 @@ export function parseWindow(v: string | null | undefined): { label: string; iso:
   // Explicit windows first: "...in Q4 2026" beats a bare "June" mention.
   m = s.match(_Q_RE);
   if (m) return { label: `Q${m[1]} ${_year4(m[2])}`, iso: null };
+  m = s.match(_Q_WORD_RE); // "first quarter of 2027"
+  if (m) {
+    const q0 = m[0].toLowerCase();
+    const q = q0.startsWith("first") || q0.startsWith("1st") ? 1
+      : q0.startsWith("second") || q0.startsWith("2nd") ? 2
+      : q0.startsWith("third") || q0.startsWith("3rd") ? 3 : 4;
+    return { label: `Q${q} ${m[1]}`, iso: null };
+  }
+  m = s.match(_Q_DIGIT_RE); // "4Q26"
+  if (m) return { label: `Q${m[1]} ${_year4(m[2])}`, iso: null };
   m = s.match(_H_RE);
   if (m) return { label: `H${m[1]} ${_year4(m[2])}`, iso: null };
   m = s.match(_HALF_TEXT_RE); // "second half of 2026"
   if (m) return { label: `H${/^s|^2/i.test(m[0]) ? 2 : 1} ${m[1]}`, iso: null };
+  m = s.match(_LATE_RE); // "late 2026", "year-end 2026" -> Q4
+  if (m) return { label: `Q4 ${m[1]}`, iso: null };
   m = s.match(_MONTH_RE); // "30 Sept 2026" (day), "Sep 2026", "September data cut" (no year)
   if (m) {
     const mo = _MONTH_IDX[m[2].toLowerCase().slice(0, 3)];
